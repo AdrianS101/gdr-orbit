@@ -18,7 +18,7 @@ const SCHEMA = {
         type: 'object',
         required: ['type'],
         properties: {
-          type: { type: 'string', enum: ['remove_pauses', 'cut', 'keep_only', 'captions', 'logo', 'text', 'transitions', 'filter', 'zoom', 'dynamic_zoom', 'speed', 'music', 'format', 'denoise', 'pip', 'broll'] },
+          type: { type: 'string', enum: ['remove_pauses', 'cut', 'keep_only', 'captions', 'logo', 'text', 'transitions', 'filter', 'zoom', 'dynamic_zoom', 'speed', 'music', 'format', 'denoise', 'pip', 'broll', 'rhythm'] },
           start: { type: 'number' },
           end: { type: 'number' },
           duration: { type: 'number' },
@@ -37,6 +37,7 @@ const SCHEMA = {
           volume: { type: 'number' },
           ducking: { type: 'boolean' },
           level: { type: 'string', enum: ['light', 'strong'] },
+          shotLength: { type: 'number' },
         },
       },
     },

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { FolderOpen, Upload, Film, Image as ImageIcon, Music, Type, Trash2, Search, HardDrive, FileText, Tag } from 'lucide-react';
+import { FolderOpen, Upload, Film, Image as ImageIcon, Music, Type, Trash2, Search, HardDrive, FileText, Tag, Scissors } from 'lucide-react';
 import { api, media, uploadFile } from '../lib/api.ts';
 import { useApp, showError, onJob } from '../lib/store.ts';
 import { fmtBytes, fmtDuration, fmtRelative } from '../lib/format.ts';
@@ -7,6 +7,7 @@ import { Empty, Field, Modal, Progress } from '../components/ui.tsx';
 import type { Asset } from '../../../shared/types.ts';
 import { DriveFolders } from './DriveSettings.tsx';
 import { useNavigate } from 'react-router-dom';
+import { ReelsModal } from './ReelsModal.tsx';
 
 const KINDS = [
   { id: '', label: 'Tudo' },
@@ -69,6 +70,7 @@ export function LibraryPage() {
   const [over, setOver] = useState(false);
   const [pathOpen, setPathOpen] = useState(false);
   const [editing, setEditing] = useState<Asset | null>(null);
+  const [reels, setReels] = useState<Asset | null>(null);
   const nav = useNavigate();
 
   const load = () => {
@@ -222,6 +224,11 @@ export function LibraryPage() {
                       Editar
                     </button>
                   )}
+                  {a.kind === 'video' && a.status === 'ready' && a.meta.hasAudio && (
+                    <button className="btn ghost sm" title="Gerar vários Reels a partir deste vídeo (entrevista, podcast, live)" onClick={() => setReels(a)}>
+                      <Scissors size={14} /> Reels
+                    </button>
+                  )}
                   <button className="btn ghost sm icon" title="Excluir" onClick={() => remove(a)}>
                     <Trash2 size={14} />
                   </button>
@@ -233,6 +240,7 @@ export function LibraryPage() {
       )}
 
       {pathOpen && brandId && <ImportPathModal brandId={brandId} onClose={() => setPathOpen(false)} onDone={load} />}
+      {reels && <ReelsModal asset={reels} onClose={() => { setReels(null); load(); }} />}
       {editing && <TagsModal asset={editing} onClose={() => setEditing(null)} onDone={load} />}
     </div>
   );

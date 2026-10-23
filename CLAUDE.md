@@ -128,7 +128,9 @@ Fonte da interface: Inter (variável, empacotada). Ícones: lucide-react.
 - Redução de ruído por trecho/faixa (`denoise: light|strong` → highpass + afftdn). A prévia comum toca o original; o painel oferece "Ouvir amostra tratada" (15 s gerados no servidor com a mesma cadeia da exportação).
 - IA: ações `denoise`, `pip` (com entrada animada por quadros-chave) e `broll` no catálogo do chat.
 - Validado: render sintético com PiP animado + B-roll + logo girado + faixa de áudio + redução de ruído; editor no navegador (servidor de teste): PiP, quadros-chave, amostra tratada, exportação.
-- Ainda falta da Etapa 2: "3 Reels a partir de uma entrevista", referência de ritmo, transições com sobreposição entre trechos.
+- Reels a partir de uma entrevista (Biblioteca → botão "Reels"; shared/studio.ts + server/src/routes/studio.ts): transcrição → frases (`splitSentences`) → IA escolhe trechos por índice de frase (corte sempre em fim de frase, sem sobreposição, duração validada em `sanitizePicks`) → revisão (prévia, nome, título) → cria 1 projeto por corte com remover pausas, legendas, logo e título de abertura. Validado: sugestões reais com Gemini num vídeo de 113 s; projetos criados e exportados.
+- Ritmo de referência (aba Efeitos): mede cortes do vídeo de referência com a detecção de cena do FFmpeg (limiar 0,3; cortes só de zoom não contam), compara com o projeto (`projectRhythm`) e aplica `rhythm` (divide nas pausas entre palavras e alterna enquadramento normal/punch-in 1,12×). Também disponível no chat da IA.
+- Ainda falta da Etapa 2: transições com sobreposição entre trechos.
 
 ## Etapa 3 (em andamento) — redes sociais
 - server/src/social/meta.ts: OAuth da Meta (app do próprio usuário, modo desenvolvimento), Páginas + Instagram profissional, publicação real: Reels (upload resumível, sem URL pública), imagem (hospedada como foto não publicada da Página para obter URL), carrossel (2–10), vídeo/foto/multi-foto no Facebook. "Publicado" só com id + permalink da API. Tokens criptografados (AES-GCM, lib/vault.ts).

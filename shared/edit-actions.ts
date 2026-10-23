@@ -5,6 +5,7 @@ import { clamp, defaultCaptionY, layoutClips, makeFormat, rippleDelete, splitAt,
 import { buildCues } from './captions.ts';
 import { colorFromPreset, COLOR_PRESETS, removePauses } from './effects.ts';
 import { DENOISE_LABEL, newLayer } from './keyframes.ts';
+import { applyRhythm } from './studio.ts';
 
 export type EditAction =
   | { type: 'remove_pauses'; minGap?: number }
@@ -22,7 +23,8 @@ export type EditAction =
   | { type: 'format'; preset: Exclude<FormatPreset, 'custom'> }
   | { type: 'denoise'; level?: DenoiseLevel }
   | { type: 'pip'; assetId: string; start: number; duration?: number; position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'center'; anim?: 'fade' | 'pop' | 'slide' | 'none' }
-  | { type: 'broll'; assetId: string; start: number; duration?: number };
+  | { type: 'broll'; assetId: string; start: number; duration?: number }
+  | { type: 'rhythm'; shotLength: number };
 
 export interface ActionContext {
   transcripts: Record<string, CaptionWord[]>;
@@ -54,6 +56,7 @@ export function describeAction(a: EditAction, ctx?: ActionContext): string {
     case 'format': return `Formato ${a.preset}`;
     case 'denoise': return `Reduzir ruído do áudio (${DENOISE_LABEL[a.level ?? 'light'].split(' (')[0].toLowerCase()})`;
     case 'pip': return `Sobrepor "${ctx?.assets[a.assetId]?.name ?? a.assetId}" em janela em ${t(a.start)}`;
+    case 'rhythm': return `Ritmo: mudança de enquadramento a cada ~${t(a.shotLength)}`;
     case 'broll': return `B-roll "${ctx?.assets[a.assetId]?.name ?? a.assetId}" em ${t(a.start)}`;
   }
 }
@@ -175,6 +178,11 @@ export function applyAction(tl: Timeline, a: EditAction, ctx: ActionContext): Ac
       const level = a.level === 'strong' ? 'strong' : 'light';
       return { timeline: { ...tl, clips: tl.clips.map((c) => ({ ...c, denoise: level })) }, label };
     }
+    case 'rhythm': {
+      const r = applyRhythm(tl, ctx.transcripts, Number(a.shotLength) || 3);
+      if (!r.changes) throw new Error('Os trechos já são curtos para esse ritmo (nada a dividir).');
+      return { timeline: r.timeline, label: `${label} (${r.changes} cortes)` };
+    }
     case 'pip':
     case 'broll': {
       const asset = ctx.assets[a.assetId];
@@ -240,4 +248,5 @@ export const ACTION_CATALOG = `Ações disponíveis (use somente estas; tempos e
 - format {preset: "9:16"|"16:9"|"1:1"|"4:5"}.
 - denoise {level?: "light"|"strong"} — reduz chiado/ruído de fundo da fala (light para ruído leve).
 - pip {assetId, start, duration?, position?: "top-right"|"top-left"|"bottom-right"|"bottom-left"|"center", anim?: "fade"|"pop"|"slide"|"none"} — vídeo/imagem da biblioteca em janela sobre o vídeo, com entrada animada.
+- rhythm {shotLength: 0.8-15} — divide nas pausas e alterna enquadramento (punch-in) a cada ~shotLength segundos, para um ritmo mais dinâmico.
 - broll {assetId, start, duration?} — vídeo/imagem cobrindo a tela enquanto a fala principal continua (ilustra o que é dito).`;

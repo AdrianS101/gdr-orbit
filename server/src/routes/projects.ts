@@ -29,7 +29,7 @@ function validateTimeline(tl: any, brandId: string): Timeline {
   if (!tl || tl.version !== 1 || !Array.isArray(tl.clips) || !Array.isArray(tl.overlays) || !tl.captions || !tl.format) {
     throw badRequest('Os dados da timeline estão em um formato inválido.', 'Recarregue o editor. Se persistir, restaure uma versão anterior.');
   }
-  const ids = new Set<string>([...tl.clips.map((c: any) => c.assetId), ...tl.overlays.map((o: any) => o.assetId), ...tl.captions.cues.map((c: any) => c.assetId), ...(tl.music?.assetId ? [tl.music.assetId] : [])]);
+  const ids = new Set<string>([...tl.clips.map((c: any) => c.assetId), ...tl.overlays.map((o: any) => o.assetId), ...tl.captions.cues.map((c: any) => c.assetId), ...(tl.music?.assetId ? [tl.music.assetId] : []), ...(tl.layers ?? []).map((l: any) => l.assetId), ...(tl.audioClips ?? []).map((l: any) => l.assetId)]);
   for (const id of ids) {
     const a = db.prepare('SELECT brand_id FROM assets WHERE id = ?').get(id) as any;
     if (!a) throw badRequest('A timeline usa um arquivo que não existe mais.', 'Remova o trecho correspondente.');

@@ -2,6 +2,7 @@
 import { useEditor } from './store.ts';
 import { updateTimeline } from './actions.ts';
 import { addAudioClip } from './LayerPanels.tsx';
+import { RhythmSection } from './RhythmPanel.tsx';
 import { useApp } from '../lib/store.ts';
 import { Field } from '../components/ui.tsx';
 import { UploadButton } from '../pages/Library.tsx';
@@ -74,6 +75,7 @@ export function EffectsPanel() {
           <input type="range" min={0.2} max={2} step={0.1} value={clip.transition.duration} onChange={(e) => setClips((c) => (c.id === clip.id ? { ...c, transition: { ...c.transition!, duration: Number(e.target.value) } } : c), 'Tempo do elemento')} />
         </Field>
       )}
+      <RhythmSection />
     </div>
   );
 }
