@@ -1,7 +1,7 @@
 @echo off
 title GDR Digital
 cd /d "%~dp0"
-if not exist "web\dist\index.html" (
+if not exist "dist\index.html" (
   echo Preparando a interface pela primeira vez...
   call npm run build
 )
