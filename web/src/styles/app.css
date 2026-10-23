@@ -270,3 +270,7 @@ input[type='color'] { width: 34px; height: 30px; border: 1px solid var(--border)
 .flow-node { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--surface-2); }
 .flow-title { font-weight: 700; display: flex; align-items: center; gap: 6px; }
 @media (max-width: 900px) { .inbox { grid-template-columns: minmax(0, 1fr); height: auto; } .inbox-list { max-height: 40vh; } }
+
+.seg { display: flex; gap: 2px; background: var(--surface-2); border-radius: 9px; padding: 3px; margin-bottom: 6px; }
+.seg button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 0; background: none; color: var(--text-2); font-weight: 600; font-size: 12.5px; padding: 6px 4px; border-radius: 7px; cursor: pointer; }
+.seg button.on { background: var(--accent); color: var(--on-accent); }

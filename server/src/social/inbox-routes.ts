@@ -27,9 +27,12 @@ function cleanConfig(c: any): AutomationConfig {
 export async function inboxRoutes(app: FastifyInstance) {
   // ---- caixa de entrada ----
   app.get('/api/inbox/contacts', async (req) => {
-    const q = req.query as { brandId?: string; status?: string; network?: string; q?: string };
+    const q = req.query as { brandId?: string; status?: string; network?: string; q?: string; kind?: string };
     const where = ['1=1'];
     const args: any[] = [];
+    // Tipo: conversas que têm Direct ou que têm comentários.
+    if (q.kind === 'dm') where.push("EXISTS (SELECT 1 FROM messages m WHERE m.contact_id = contacts.id AND m.kind IN ('dm','private_reply'))");
+    if (q.kind === 'comment') where.push("EXISTS (SELECT 1 FROM messages m WHERE m.contact_id = contacts.id AND m.kind IN ('comment','comment_reply'))");
     if (q.brandId) (where.push('brand_id = ?'), args.push(q.brandId));
     if (q.status) (where.push('status = ?'), args.push(q.status));
     if (q.network) (where.push('network = ?'), args.push(q.network));

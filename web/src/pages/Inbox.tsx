@@ -43,6 +43,7 @@ export function InboxPage() {
   const brandId = scope !== 'all' ? scope : null;
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [status, setStatus] = useState('');
+  const [kind, setKind] = useState<'' | 'dm' | 'comment'>('');
   const [sel, setSel] = useState<Contact | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState('');
@@ -51,14 +52,14 @@ export function InboxPage() {
   const [accounts, setAccounts] = useState<(SocialAccount & { mode?: string })[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
 
-  const load = () => api.get<Contact[]>(`/api/inbox/contacts?${new URLSearchParams({ ...(brandId ? { brandId } : {}), ...(status ? { status } : {}) })}`).then(setContacts, showError);
+  const load = () => api.get<Contact[]>(`/api/inbox/contacts?${new URLSearchParams({ ...(brandId ? { brandId } : {}), ...(status ? { status } : {}), ...(kind ? { kind } : {}) })}`).then(setContacts, showError);
   const loadMsgs = (c: Contact) => api.get<Msg[]>(`/api/inbox/contacts/${c.id}/messages`).then((m) => (setMsgs(m), setTimeout(() => endRef.current?.scrollIntoView(), 50)), showError);
   useEffect(() => {
     load();
     const t = setInterval(load, 30_000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brandId, status]);
+  }, [brandId, status, kind]);
   useEffect(() => {
     if (!brandId) return setAccounts([]);
     api.get<SocialAccount[]>(`/api/social/accounts?brandId=${brandId}`).then(async (list) => {
@@ -74,6 +75,8 @@ export function InboxPage() {
     setText('');
     loadMsgs(c);
   };
+  // Na conversa aberta, mostra só o tipo filtrado (Directs ou comentários e as respostas correspondentes).
+  const visible = msgs.filter((m) => !kind || (kind === 'dm' ? m.kind === 'dm' || m.kind === 'private_reply' : m.kind === 'comment' || m.kind === 'comment_reply'));
   const lastComment = [...msgs].reverse().find((m) => m.kind === 'comment' && m.direction === 'in');
   const window24 = !!sel?.lastInboundAt && Date.now() - Date.parse(sel.lastInboundAt) < 24 * 3600_000 && msgs.some((m) => m.kind === 'dm' && m.direction === 'in');
 
@@ -139,6 +142,11 @@ export function InboxPage() {
 
       <div className="inbox">
         <aside className="inbox-list card">
+          <div className="seg" role="tablist" aria-label="Tipo de mensagem">
+            {([['', 'Todos'], ['dm', 'Directs'], ['comment', 'Comentários']] as const).map(([k, l]) => (
+              <button key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>{k === 'dm' ? <MessageCircle size={13} /> : k === 'comment' ? <AtSign size={13} /> : null} {l}</button>
+            ))}
+          </div>
           <div className="tabs" style={{ marginBottom: 6 }}>
             {[['', 'Todas'], ['pending', 'Precisa de você'], ['open', 'Abertas'], ['done', 'Resolvidas']].map(([k, l]) => (
               <button key={k} className={status === k ? 'on' : ''} onClick={() => setStatus(k)}>{l}</button>
@@ -184,7 +192,7 @@ export function InboxPage() {
                 <input className="input sm" style={{ width: 160 }} placeholder="etiquetas, vírgula" defaultValue={sel.tags.join(', ')} key={sel.id} onBlur={(e) => patch({ tags: e.target.value.split(',') })} />
               </div>
               <div className="thread">
-                {msgs.map((m) => (
+                {visible.map((m) => (
                   <div key={m.id} className={`bubble ${m.direction} ${m.status}`}>
                     <div className="faint" style={{ fontSize: 10, marginBottom: 2 }}>
                       {KIND[m.kind] ?? m.kind}
