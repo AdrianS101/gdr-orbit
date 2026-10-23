@@ -4,7 +4,7 @@
 import { db, getSetting, now, setSetting } from '../db.ts';
 import { unseal } from '../lib/vault.ts';
 import { uid } from '../../../shared/timeline.ts';
-import { commentTriggers, deliveryMessage, fill, describeOut, dmText, followUpReply, gateMessage, isButtonReply, nextAfterClick, openingMessage, pickCommentReply, privateReplyAllowed, usesButtonFlow, withinWindow, type AutomationConfig, type FlowStage, type OutMessage } from '../../../shared/automation.ts';
+import { commentTriggers, deliveryMessage, fill, linkMessage, describeOut, dmText, followUpReply, gateMessage, isButtonReply, nextAfterClick, openingMessage, pickCommentReply, privateReplyAllowed, usesButtonFlow, withinWindow, type AutomationConfig, type FlowStage, type OutMessage } from '../../../shared/automation.ts';
 import { graphVersion, MetaError } from './meta.ts';
 import { generateJson } from '../ai/providers.ts';
 import { brandContext } from '../ai/copy.ts';
@@ -169,10 +169,7 @@ async function onComment(acc: any, contact: any, c: { id: string; text: string; 
       if (usesButtonFlow(cfg) && dmLimited(acc)) {
         // App sem "acesso avançado" de mensagens: a Meta só deixa enviar a 1ª mensagem (resposta ao comentário).
         // Então o link vai já nela, como botão — funciona para qualquer pessoa.
-        const out = { ...deliveryMessage(cfg, vars), text: `${fill(cfg.dm, vars)}
-
-${fill(cfg.delivery || '', vars)}`.trim() };
-        await privateReply(acc, contact, c.id, out, 'automation');
+        await privateReply(acc, contact, c.id, linkMessage(cfg, vars), 'automation');
         finishRun(a.id, c.id, 'dm', 'done', 'Link enviado direto na 1ª mensagem (app sem acesso avançado de mensagens da Meta).');
       } else if (usesButtonFlow(cfg)) {
         // Fluxo com botão: a 1ª mensagem só convida; o conteúdo vai depois do clique (e de seguir, se exigido).
@@ -183,7 +180,7 @@ ${fill(cfg.delivery || '', vars)}`.trim() };
           finishRun(a.id, c.id, 'dm', 'done', 'Convite com botão enviado; aguardando o clique.');
         } else finishRun(a.id, c.id, 'dm', 'done', 'Convite enviado, mas a Meta não informou o destinatário: o clique não poderá ser acompanhado.');
       } else {
-        await privateReply(acc, contact, c.id, dmText(cfg, vars), 'automation');
+        await privateReply(acc, contact, c.id, linkMessage(cfg, vars), 'automation');
         finishRun(a.id, c.id, 'dm', 'done', null);
       }
       finishRun(a.id, c.id, 'trigger', 'done', null);

@@ -49,9 +49,18 @@ const btnTitle = (t: string) => t.trim().slice(0, 20) || 'Continuar';
 /** A automação usa o fluxo com botão (abre → [segue?] → entrega)? */
 export const usesButtonFlow = (cfg: AutomationConfig) => !!cfg.button?.label?.trim() || !!cfg.followGate?.enabled;
 
+/** Mensagem única com o link como botão (sem a URL no texto) — usada sem fluxo de clique. */
+export function linkMessage(cfg: AutomationConfig, vars: { nome?: string | null; usuario?: string | null }): OutMessage {
+  if (!cfg.link?.url) return { text: dmText(cfg, vars) };
+  const text = fill(cfg.dm, vars) + (cfg.followUp?.question ? `
+
+${fill(cfg.followUp.question, vars)}` : '');
+  return { text, buttons: [{ type: 'web_url', title: btnTitle(cfg.link.label || 'Acessar'), url: cfg.link.url }] };
+}
+
 /** Primeira mensagem (resposta privada ao comentário). */
 export function openingMessage(cfg: AutomationConfig, vars: { nome?: string | null; usuario?: string | null }, flowId: string): OutMessage {
-  if (!usesButtonFlow(cfg)) return { text: dmText(cfg, vars) };
+  if (!usesButtonFlow(cfg)) return linkMessage(cfg, vars);
   return { text: fill(cfg.dm, vars), buttons: [{ type: 'postback', title: btnTitle(cfg.button?.label || 'Quero receber'), payload: `orbit:${flowId}:open` }] };
 }
 
