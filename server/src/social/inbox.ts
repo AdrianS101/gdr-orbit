@@ -1,5 +1,5 @@
 // Caixa de entrada e automações (Instagram/Facebook via API oficial da Meta).
-// Busca novidades a cada minuto enquanto o GDR Orbit está aberto. Registra tudo o que foi
+// Busca novidades a cada minuto enquanto o GDR Digital está aberto. Registra tudo o que foi
 // recebido, sugerido e enviado. Nunca envia fora das regras da Meta (24 h para DM; 7 dias para resposta privada).
 import { db, getSetting, now, setSetting } from '../db.ts';
 import { unseal } from '../lib/vault.ts';
@@ -335,9 +335,21 @@ async function pollAccount(acc: any) {
       if (isNew && at >= live) await onComment(acc, db.prepare('SELECT * FROM contacts WHERE id = ?').get(contact.id), { id: c.id, text, at, mediaId: md.id });
     }
   }
+  await enrichContacts(acc, token).catch(() => {});
   setSetting(`inbox.since.${acc.id}`, started);
   db.prepare('UPDATE social_accounts SET error = NULL WHERE id = ? AND error LIKE ?').run(acc.id, '%mensagens%');
   if (errors.length) console.warn(`[caixa de entrada] ${acc.username ?? acc.name}:`, errors.join(' | '));
+}
+
+/** Nome e foto de quem conversa com a conta (API de perfil do Instagram). Poucos por rodada; tenta de novo só após 7 dias. */
+async function enrichContacts(acc: any, token: string) {
+  if (acc.network !== 'instagram') return;
+  const week = new Date(Date.now() - 7 * 86400_000).toISOString();
+  const list = db.prepare("SELECT id, external_id FROM contacts WHERE account_id = ? AND (avatar IS NULL OR name IS NULL) AND external_id NOT LIKE 'user:%' AND (profile_checked_at IS NULL OR profile_checked_at < ?) ORDER BY last_message_at DESC LIMIT 8").all(acc.id, week) as any[];
+  for (const c of list) {
+    const r = await call('GET', c.external_id, { fields: 'name,username,profile_pic' }, token).catch(() => null);
+    db.prepare('UPDATE contacts SET name = COALESCE(?, name), username = COALESCE(?, username), avatar = COALESCE(?, avatar), profile_checked_at = ? WHERE id = ?').run(r?.name ?? null, r?.username ?? null, r?.profile_pic ?? null, now(), c.id);
+  }
 }
 
 let polling = false;

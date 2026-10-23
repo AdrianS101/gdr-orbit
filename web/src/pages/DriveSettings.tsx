@@ -27,8 +27,8 @@ export function DriveSettings() {
       </h2>
       {!cfg?.configured && (
         <ol className="muted small" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8 }}>
-          <li>Acesse <b>console.cloud.google.com</b>, crie um projeto (ex.: GDR Orbit) e ative a <b>Google Drive API</b>.</li>
-          <li>Em <b>Tela de consentimento OAuth</b>: tipo Externo, nome GDR Orbit, e adicione o seu e-mail em <b>Usuários de teste</b>.</li>
+          <li>Acesse <b>console.cloud.google.com</b>, crie um projeto (ex.: GDR Digital) e ative a <b>Google Drive API</b>.</li>
+          <li>Em <b>Tela de consentimento OAuth</b>: tipo Externo, nome GDR Digital, e adicione o seu e-mail em <b>Usuários de teste</b>.</li>
           <li>Em <b>Credenciais → Criar credenciais → ID do cliente OAuth</b>, tipo <b>Aplicativo da Web</b>, com o URI de redirecionamento: <code className="mono">{cfg?.redirectUri}</code></li>
           <li>Copie o ID e a chave secreta do cliente e cole abaixo.</li>
         </ol>
@@ -46,7 +46,7 @@ export function DriveSettings() {
         {cfg?.configured && !cfg.connected && <a className="btn primary sm" href="/api/drive/connect">Conectar conta Google</a>}
         {cfg?.connected && <button className="btn ghost sm" onClick={() => api.post('/api/drive/disconnect').then(load, showError)}>Desconectar</button>}
       </div>
-      <span className="faint small">Acesso somente leitura. Arquivos importados nunca são publicados automaticamente. Abra o GDR Orbit por http://localhost:4310 ao conectar.</span>
+      <span className="faint small">Acesso somente leitura. Arquivos importados nunca são publicados automaticamente. Abra o GDR Digital por http://localhost:4310 ao conectar.</span>
     </section>
   );
 }

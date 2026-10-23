@@ -144,7 +144,7 @@ export function startScheduler() {
     for (const p of due) {
       if (Date.now() - Date.parse(p.scheduled_at) > 15 * 60_000) {
         db.prepare("UPDATE posts SET status = 'failed', updated_at = ? WHERE id = ?").run(now(), p.id);
-        db.prepare("UPDATE post_targets SET status = 'failed', error = 'O GDR Orbit estava desligado no horário agendado. Reagende ou publique agora.' WHERE post_id = ? AND status = 'pending'").run(p.id);
+        db.prepare("UPDATE post_targets SET status = 'failed', error = 'O GDR Digital estava desligado no horário agendado. Reagende ou publique agora.' WHERE post_id = ? AND status = 'pending'").run(p.id);
         continue;
       }
       db.prepare("UPDATE posts SET status = 'publishing', updated_at = ? WHERE id = ?").run(now(), p.id);

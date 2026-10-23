@@ -122,9 +122,20 @@ export function followUpReply(cfg: AutomationConfig, text: string): { keyword: s
   return null;
 }
 
+/** Só o primeiro nome, com inicial maiúscula (sem emojis/símbolos). Nunca usa o @ como nome. */
+export function firstName(nome?: string | null): string | null {
+  const w = String(nome ?? '').replace(/[^\p{L}\s'-]/gu, ' ').trim().split(/\s+/)[0] ?? '';
+  if (w.length < 2) return null;
+  return w[0].toLocaleUpperCase('pt-BR') + w.slice(1).toLocaleLowerCase('pt-BR');
+}
+
 export function fill(template: string, vars: { nome?: string | null; usuario?: string | null }): string {
-  const nome = (vars.nome || vars.usuario || '').split(' ')[0] || 'tudo bem';
-  return template.replace(/\{nome\}/gi, nome).replace(/\{usuario\}/gi, vars.usuario ? `@${vars.usuario}` : '');
+  const nome = firstName(vars.nome);
+  let t = template.replace(/\{usuario\}/gi, vars.usuario ? `@${vars.usuario}` : '');
+  if (nome) return t.replace(/\{nome\}/gi, nome);
+  // Sem nome conhecido: tira o marcador sem deixar ", !" solto ("Oi, {nome}!" → "Oi!").
+  t = t.replace(/[ \t]*,?[ \t]*\{nome\}[ \t]*/gi, ' ').replace(/ +([!?.,])/g, '$1').replace(/ {2,}/g, ' ');
+  return t.trim();
 }
 
 /** Texto final da DM (com o link, se houver). */

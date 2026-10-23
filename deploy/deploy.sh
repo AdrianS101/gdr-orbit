@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publica a versão atual do GDR Orbit no servidor (Git Bash no Windows ou Linux/macOS).
+# Publica a versão atual do GDR Digital no servidor (Git Bash no Windows ou Linux/macOS).
 # Uso: deploy/deploy.sh ubuntu@IP-DO-SERVIDOR [chave.pem]
 #   - 1ª vez: instala Docker e libera as portas 80/443 no servidor.
 #   - Sempre: envia o código, reconstrói e reinicia, mantendo os dados (volume orbit-data).
@@ -29,7 +29,7 @@ echo "→ Construindo e iniciando (pode levar alguns minutos na 1ª vez)"
 "${SSH[@]}" "cd ~/gdr-orbit && tar -xzf ~/gdr-orbit.tgz && cd deploy && DOMAIN=$DOMAIN sudo -E docker compose up -d --build && sudo docker image prune -f >/dev/null"
 
 echo ""
-echo "✓ GDR Orbit no ar: https://$DOMAIN"
+echo "✓ GDR Digital no ar: https://$DOMAIN"
 echo "  Endereços de retorno para cadastrar:"
 echo "    Meta:   https://$DOMAIN/api/social/meta/callback"
 echo "    Google: https://$DOMAIN/api/drive/callback"

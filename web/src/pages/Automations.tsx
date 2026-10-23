@@ -238,7 +238,7 @@ export function AutomationsPage() {
       <div className="page-head">
         <div>
           <h1>Automações</h1>
-          <p>Comentou a palavra-chave → recebe a DM com o material. Verificação a cada minuto enquanto o GDR Orbit está aberto.</p>
+          <p>Comentou a palavra-chave → recebe a DM com o material. Verificação a cada minuto enquanto o GDR Digital está aberto.</p>
         </div>
         <div className="actions">
           <button className="btn primary" onClick={() => setEdit(null)}><Plus size={16} /> Nova automação</button>
@@ -259,7 +259,7 @@ export function AutomationsPage() {
               <span>DMs enviadas: <b>{a.stats.sent}</b></span>
               {a.stats.failed > 0 && <span style={{ color: 'var(--danger)' }}>Falhas: <b>{a.stats.failed}</b></span>}
             </div>
-            <div className="row" style={{ gap: 4 }}>
+            <div className="row card-actions">
               <button className="btn sm" onClick={() => api.post(`/api/automations/${a.id}/active`, { active: !a.active }).then(load, showError)}>
                 {a.active ? <Pause size={14} /> : <Play size={14} />} {a.active ? 'Pausar' : 'Ativar'}
               </button>

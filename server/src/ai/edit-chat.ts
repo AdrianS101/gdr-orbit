@@ -44,7 +44,7 @@ const SCHEMA = {
   },
 };
 
-const SYSTEM = `Você é o editor de vídeo do GDR Orbit. Converta o pedido do usuário em ações do catálogo.
+const SYSTEM = `Você é o editor de vídeo do GDR Digital. Converta o pedido do usuário em ações do catálogo.
 Regras:
 - Use SOMENTE ações e parâmetros do catálogo. Tempos em segundos da timeline atual, baseados na transcrição fornecida.
 - Nunca corte no meio de uma fala nem remova trechos que mudem o sentido do que foi dito.

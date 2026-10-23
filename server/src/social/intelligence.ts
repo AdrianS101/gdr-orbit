@@ -252,7 +252,7 @@ Pergunta: ${question}`,
       return { available: true, ...r };
     } catch (e) {
       if (e instanceof AiError && /Limite gratuito/.test(e.message)) {
-        return { available: false, reason: 'A pesquisa na web com fontes usa a Busca do Google do Gemini, que não está liberada no plano gratuito da sua chave. Para ativar, habilite o faturamento do projeto no Google AI Studio. Sem isso, o GDR Orbit não apresenta tendências (para não mostrar nada sem fonte) — use "Concorrentes e referências", que funciona com dados reais e grátis.' };
+        return { available: false, reason: 'A pesquisa na web com fontes usa a Busca do Google do Gemini, que não está liberada no plano gratuito da sua chave. Para ativar, habilite o faturamento do projeto no Google AI Studio. Sem isso, o GDR Digital não apresenta tendências (para não mostrar nada sem fonte) — use "Concorrentes e referências", que funciona com dados reais e grátis.' };
       }
       throw asApp(e);
     }

@@ -30,7 +30,7 @@ export function Login({ setupDone, onDone }: { setupDone: boolean; onDone: () =>
         <div className="row" style={{ gap: 12 }}>
           <OrbitLogo size={36} />
           <div>
-            <div style={{ fontSize: 20, fontWeight: 700 }}>GDR Orbit</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>GDR Digital</div>
             <div className="muted small">Seu conteúdo, sua operação e seus resultados no mesmo lugar.</div>
           </div>
         </div>
@@ -38,7 +38,7 @@ export function Login({ setupDone, onDone }: { setupDone: boolean; onDone: () =>
           <div className="alert info small">
             <div>
               <div className="title">Primeiro acesso</div>
-              Crie a senha que protege o GDR Orbit neste computador. Ela é guardada apenas aqui, de forma criptografada.
+              Crie a senha que protege o GDR Digital neste computador. Ela é guardada apenas aqui, de forma criptografada.
             </div>
           </div>
         )}

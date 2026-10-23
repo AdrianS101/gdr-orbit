@@ -63,7 +63,7 @@ export async function systemRoutes(app: FastifyInstance) {
       return { id: b.id, name: b.name, missing: missingFields(b.profile) };
     });
     const review = projects.filter((p) => p.status === 'review');
-    return { projects, failed, active, exports, brands, review, ai: verifiedProvider() };
+    return { projects, failed, active, exports, brands, review, ai: verifiedProvider(), stats: homeStats(brandId) };
   });
 
   // ---- fontes ----
@@ -158,4 +158,55 @@ export async function systemRoutes(app: FastifyInstance) {
     }
     return { ffmpeg, encoders: await availableEncoders(), dataDir: config.dataDir, node: process.version };
   });
+}
+
+/** Resumo dos últimos 30 dias × 30 anteriores, só com dados sincronizados (Meta) ou importados — nada estimado. */
+function homeStats(brandId?: string) {
+  const day = 86400_000;
+  const now = Date.now();
+  const acc = brandId ? 'AND a.brand_id = ?' : '';
+  const args = brandId ? [brandId] : [];
+  const media = (from: number, to: number) =>
+    db.prepare(`SELECT m.*, a.username FROM media_items m JOIN social_accounts a ON a.id = m.account_id WHERE m.posted_at >= ? AND m.posted_at < ? ${acc}`).all(new Date(from).toISOString(), new Date(to).toISOString(), ...args) as any[];
+  const sum = (rows: any[], keys: string[]) => {
+    let n = 0;
+    let has = false;
+    for (const r of rows) {
+      const m = JSON.parse(r.metrics);
+      for (const k of keys) if (typeof m[k] === 'number') (n += m[k]), (has = true);
+    }
+    return has ? n : null;
+  };
+  const cur = media(now - 30 * day, now);
+  const prev = media(now - 60 * day, now - 30 * day);
+  const INTER = ['likes', 'comments', 'shares', 'saved'];
+  const series = Array.from({ length: 30 }, (_, i) => {
+    const d0 = new Date(now - (29 - i) * day);
+    const key = d0.toISOString().slice(0, 10);
+    const rows = cur.filter((r) => r.posted_at.slice(0, 10) === key);
+    return { day: key, views: sum(rows, ['views']) ?? 0, posts: rows.length };
+  });
+  const top = cur
+    .map((r) => ({ id: r.id, caption: (r.caption ?? '').slice(0, 90), thumb: r.thumb, permalink: r.permalink, network: r.network, account: r.username, views: JSON.parse(r.metrics).views ?? null }))
+    .filter((r) => r.views !== null)
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 3);
+  const bw = brandId ? 'AND brand_id = ?' : '';
+  const scheduled = (db.prepare(`SELECT COUNT(*) AS n FROM posts WHERE status = 'scheduled' ${bw}`).get(...args) as any).n;
+  const pending = (db.prepare(`SELECT COUNT(*) AS n FROM contacts WHERE status = 'pending' ${bw}`).get(...args) as any).n;
+  const dms = (db.prepare(`SELECT COUNT(*) AS n FROM automation_runs r JOIN automations a ON a.id = r.automation_id WHERE r.step = 'dm' AND r.status = 'done' AND r.created_at >= ? ${brandId ? 'AND a.brand_id = ?' : ''}`).get(new Date(now - 30 * day).toISOString(), ...args) as any).n;
+  return {
+    kpis: {
+      views: { cur: sum(cur, ['views']), prev: sum(prev, ['views']) },
+      interactions: { cur: sum(cur, INTER), prev: sum(prev, INTER) },
+      posts: { cur: cur.length, prev: prev.length },
+      reach: { cur: sum(cur, ['reach']), prev: sum(prev, ['reach']) },
+    },
+    series,
+    top,
+    scheduled,
+    pending,
+    dms,
+    synced: cur.length > 0 || prev.length > 0,
+  };
 }

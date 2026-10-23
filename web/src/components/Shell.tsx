@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Home, Building2, Clapperboard, FolderOpen, CalendarDays, Inbox, Workflow, BarChart3, Settings, ChevronDown, Check, Activity, X, RotateCcw, LogOut } from 'lucide-react';
+import { Home, Building2, Clapperboard, FolderOpen, CalendarDays, Inbox, Workflow, BarChart3, Settings, ChevronDown, Check, Activity, X, RotateCcw, LogOut, Layers } from 'lucide-react';
 import { useApp, showError } from '../lib/store.ts';
 import { api } from '../lib/api.ts';
 import { Progress, OrbitLogo } from './ui.tsx';
@@ -37,11 +37,10 @@ export function BrandSwitcher() {
     return () => document.removeEventListener('mousedown', close);
   }, []);
   const current = brands.find((b) => b.id === scope);
-  const color = current?.profile.colors[0]?.hex;
   return (
     <div className="brand-switch" ref={ref}>
       <button onClick={() => setOpen(!open)} aria-haspopup="listbox" aria-expanded={open} title="Marca selecionada">
-        <span className={`brand-dot ${current ? '' : 'all'}`} style={color ? { background: color } : undefined} />
+        <BrandAvatar b={current} size={22} />
         <span className="ellipsis" style={{ fontWeight: 600 }}>{current ? current.name : 'Visão geral (todas as marcas)'}</span>
         <span className="spacer" />
         <ChevronDown size={16} className="faint" />
@@ -49,7 +48,7 @@ export function BrandSwitcher() {
       {open && (
         <div className="menu" role="listbox">
           <button className={scope === 'all' ? 'on' : ''} onClick={() => (setScope('all'), setOpen(false))}>
-            <span className="brand-dot all" />
+            <BrandAvatar b={null} size={24} />
             <span>
               Visão geral
               <div className="faint small">Toda a operação</div>
@@ -59,7 +58,7 @@ export function BrandSwitcher() {
           </button>
           {brands.map((b) => (
             <button key={b.id} className={scope === b.id ? 'on' : ''} onClick={() => (setScope(b.id), setOpen(false))}>
-              <span className="brand-dot" style={b.profile.colors[0] ? { background: b.profile.colors[0].hex } : undefined} />
+              <BrandAvatar b={b} size={24} />
               <span className="ellipsis">{b.name}</span>
               <span className="spacer" />
               {scope === b.id && <Check size={16} />}
@@ -157,7 +156,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <OrbitLogo />
           </div>
           <div>
-            <b>GDR Orbit</b>
+            <b>GDR Digital</b>
             <small>GDR Gestão de Resultados</small>
           </div>
         </div>
@@ -203,4 +202,13 @@ export function Shell({ children }: { children: ReactNode }) {
       </nav>
     </div>
   );
+}
+
+/** Foto da marca (perfil conectado ou logo); sem foto, iniciais na cor da marca. */
+export function BrandAvatar({ b, size = 24 }: { b: { name: string; avatar?: string | null; profile: { colors: { hex: string }[] } } | null | undefined; size?: number }) {
+  const st = { width: size, height: size, minWidth: size };
+  if (!b) return <span className="brand-av all" style={st}><Layers size={size * 0.55} /></span>;
+  if (b.avatar) return <img className="brand-av" src={b.avatar} alt="" style={st} loading="lazy" />;
+  const ini = b.name.split(/s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  return <span className="brand-av" style={{ ...st, background: b.profile.colors[0]?.hex ?? 'var(--surface-3)', fontSize: size * 0.4 }}>{ini}</span>;
 }

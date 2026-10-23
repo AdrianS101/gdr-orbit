@@ -46,7 +46,7 @@ export function buildAss(tl: Timeline): string {
 
   const header = [
     '[Script Info]',
-    'Title: GDR Orbit',
+    'Title: GDR Digital',
     'ScriptType: v4.00+',
     `PlayResX: ${W}`,
     `PlayResY: ${H}`,

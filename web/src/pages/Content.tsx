@@ -132,7 +132,7 @@ function Composer({ brandId, post, onClose, onSaved }: { brandId: string; post: 
   const previewAcc = selAccounts.find((a) => a.network === previewNet);
 
   const save = async (): Promise<Post | null> => {
-    const body = { brandId, type, media: chosen, caption, captions, cover: type === 'video' ? cover : null, targets, scheduledAt: when ? new Date(when).toISOString() : null, timezone: TZ };
+    const body = { brandId, type, media: chosen, caption, captions, cover: type === 'video' && !(cover?.kind === 'image' && !cover.assetId) ? cover : null, targets, scheduledAt: when ? new Date(when).toISOString() : null, timezone: TZ };
     try {
       const p = cur ? await api.put<Post>(`/api/posts/${cur.id}`, body) : await api.post<Post>('/api/posts', body);
       setCur(p);
@@ -374,7 +374,7 @@ export function ContentPage() {
           <option value="">Todas as redes</option>
           {Object.entries(NET_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <span className="faint small">Fuso: {TZ}. O GDR Orbit precisa estar aberto no horário agendado para publicar.</span>
+        <span className="faint small">Fuso: {TZ}. O GDR Digital precisa estar aberto no horário agendado para publicar.</span>
       </div>
 
       {view === 'month' ? (

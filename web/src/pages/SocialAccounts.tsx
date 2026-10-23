@@ -108,7 +108,7 @@ export function SocialAccounts({ brandId }: { brandId: string }) {
 
       <div className="card col" style={{ gap: 8, background: 'var(--surface-2)' }}>
         <b>TikTok (publicação assistida)</b>
-        <span className="muted small">A postagem direta pela API do TikTok exige aprovação do app pelo TikTok. Até lá, o GDR Orbit prepara o vídeo e o texto, você publica no app e cola o link para registrar.</span>
+        <span className="muted small">A postagem direta pela API do TikTok exige aprovação do app pelo TikTok. Até lá, o GDR Digital prepara o vídeo e o texto, você publica no app e cola o link para registrar.</span>
         <div className="row">
           <input className="input sm" placeholder="@perfil" value={tiktok} onChange={(e) => setTiktok(e.target.value)} style={{ maxWidth: 220 }} />
           <button className="btn sm" disabled={!tiktok.trim()} onClick={() => api.post('/api/social/tiktok/assisted', { brandId, username: tiktok }).then(() => (setTiktok(''), load()), showError)}>

@@ -29,7 +29,7 @@ export function MetaSettings() {
         <li>Em Login do Facebook → Configurações, cadastre o URI de redirecionamento: <code className="mono">{redirect}</code></li>
         <li>Em Configurações → Básico, copie o <b>ID do app</b> e a <b>Chave secreta</b> e cole abaixo.</li>
         <li>Em modo desenvolvimento, funciona para os perfis em que você é administrador — não precisa de aprovação da Meta para uso próprio.</li>
-        <li>Abra o GDR Orbit por <b>http://localhost:4310</b> ao conectar (a Meta só aceita esse endereço local).</li>
+        <li>Abra o GDR Digital por <b>http://localhost:4310</b> ao conectar (a Meta só aceita esse endereço local).</li>
       </ol>
       <div className="grid cols-2">
         <Field label="ID do app"><input className="input mono" value={appId} onChange={(e) => setAppId(e.target.value)} /></Field>

@@ -1,4 +1,4 @@
-// GDR Orbit — servidor local.
+// GDR Digital — servidor local.
 import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
@@ -47,7 +47,7 @@ app.setErrorHandler((err: any, req, reply) => {
   if (err.validation) return reply.code(400).send({ error: 'Dados inválidos na requisição.', hint: err.message });
   req.log.error(err);
   console.error('[erro]', req.method, req.url, err?.message);
-  reply.code(500).send({ error: 'Erro interno no servidor.', hint: 'Tente novamente. Se persistir, veja o terminal onde o GDR Orbit está rodando.' });
+  reply.code(500).send({ error: 'Erro interno no servidor.', hint: 'Tente novamente. Se persistir, veja o terminal onde o GDR Digital está rodando.' });
 });
 
 await app.register(authRoutes);
@@ -84,5 +84,5 @@ startDriveWatcher();
 startInbox();
 
 await app.listen({ host: config.host, port: config.port });
-console.log(`\n  GDR Orbit rodando em http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}`);
+console.log(`\n  GDR Digital rodando em http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}`);
 console.log(`  Dados em ${config.dataDir}\n`);

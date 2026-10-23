@@ -216,6 +216,11 @@ export interface Brand {
   profile: BrandProfile;
   createdAt: string;
   updatedAt: string;
+  /** Lista: foto do perfil conectado ou logo, @ e redes conectadas. */
+  avatar?: string | null;
+  handle?: string | null;
+  networks?: string[];
+  counts?: { projects: number; assets: number };
 }
 
 export interface BrandProfile {

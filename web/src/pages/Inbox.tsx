@@ -115,7 +115,7 @@ export function InboxPage() {
       <div className="page-head">
         <div>
           <h1>Caixa de entrada</h1>
-          <p>Directs e comentários do Instagram e do Facebook. Atualiza a cada minuto enquanto o GDR Orbit está aberto.</p>
+          <p>Directs e comentários do Instagram e do Facebook. Atualiza a cada minuto enquanto o GDR Digital está aberto.</p>
         </div>
         <div className="actions">
           <button className="btn" disabled={busy === 'poll'} onClick={() => (setBusy('poll'), api.post('/api/inbox/poll').then(load, showError).finally(() => setBusy(null)))}>
@@ -154,21 +154,26 @@ export function InboxPage() {
           </div>
           {!contacts.length && <Empty icon={<InboxIcon size={30} />} title="Nada por aqui">Quando chegarem directs ou comentários nos perfis conectados, eles aparecem aqui.</Empty>}
           {contacts.map((c) => (
-            <button key={c.id} className={`inbox-item ${sel?.id === c.id ? 'on' : ''}`} onClick={() => open(c)}>
-              <div className="row" style={{ gap: 6 }}>
-                <b className="ellipsis">{c.username ? `@${c.username}` : c.name ?? 'Contato'}</b>
-                {c.unread > 0 && <span className="badge accent">{c.unread}</span>}
-                <span className="spacer" />
-                <span className="faint" style={{ fontSize: 11 }}>{fmtRelative(c.lastMessageAt)}</span>
-              </div>
-              <div className="row small faint" style={{ gap: 4 }}>
-                {c.last?.kind === 'comment' ? <AtSign size={11} /> : <MessageCircle size={11} />}
-                <span className="ellipsis">{c.last?.text}</span>
-              </div>
-              <div className="row" style={{ gap: 4 }}>
-                <span className={`badge ${c.status === 'pending' ? 'warning' : c.status === 'done' ? 'success' : ''}`}>{STATUS[c.status]}</span>
-                {c.paused && <span className="badge">automação pausada</span>}
-                {c.tags.map((t) => <span key={t} className="badge">#{t}</span>)}
+            <button key={c.id} className={`inbox-item ${sel?.id === c.id ? 'on' : ''} ${c.unread > 0 ? 'unread' : ''}`} onClick={() => open(c)}>
+              <ContactAvatar c={c} />
+              <div className="inbox-item-body">
+                <div className="row" style={{ gap: 6 }}>
+                  <b className="ellipsis">{c.name || (c.username ? c.username : 'Contato')}</b>
+                  <span className="spacer" />
+                  <span className="inbox-time">{fmtRelative(c.lastMessageAt)}</span>
+                </div>
+                <div className="row small" style={{ gap: 4 }}>
+                  {c.last?.kind === 'comment' ? <AtSign size={11} /> : <MessageCircle size={11} />}
+                  <span className="ellipsis inbox-preview">{c.last?.direction === 'out' ? 'Você: ' : ''}{c.last?.text}</span>
+                  {c.unread > 0 && <span className="inbox-dot" aria-label={`${c.unread} não lida(s)`} />}
+                </div>
+                {(c.status !== 'open' || c.paused || c.tags.length > 0) && (
+                  <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
+                    {c.status !== 'open' && <span className={`badge ${c.status === 'pending' ? 'warning' : 'success'}`}>{STATUS[c.status]}</span>}
+                    {c.paused && <span className="badge">automação pausada</span>}
+                    {c.tags.map((t) => <span key={t} className="badge">#{t}</span>)}
+                  </div>
+                )}
               </div>
             </button>
           ))}
@@ -241,5 +246,16 @@ export function InboxPage() {
         </section>
       </div>
     </>
+  );
+}
+
+/** Foto do perfil (API do Instagram) ou iniciais com gradiente; anel no estilo do Instagram quando há mensagem nova. */
+function ContactAvatar({ c }: { c: { name?: string | null; username?: string | null; avatar?: string | null; unread: number; network: string } }) {
+  const label = (c.name || c.username || '?').replace(/^@/, '');
+  const ini = label.split(/[s._]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  return (
+    <span className={`ct-av ${c.unread > 0 ? 'ring' : ''}`}>
+      {c.avatar ? <img src={c.avatar} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span className="ct-ini">{ini}</span>}
+    </span>
   );
 }

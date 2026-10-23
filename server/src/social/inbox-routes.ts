@@ -11,7 +11,7 @@ const asApp = (e: unknown) => (e instanceof MetaError ? new AppError(400, e.mess
 
 function rowToContact(r: any) {
   const last = db.prepare('SELECT text, kind, direction, created_at FROM messages WHERE contact_id = ? ORDER BY created_at DESC LIMIT 1').get(r.id) as any;
-  return { id: r.id, brandId: r.brand_id, accountId: r.account_id, network: r.network, username: r.username, name: r.name, tags: JSON.parse(r.tags).filter((t: string) => !t.startsWith('aguarda:')), status: r.status, paused: !!r.paused, unread: r.unread, lastMessageAt: r.last_message_at, lastInboundAt: r.last_inbound_at, last };
+  return { id: r.id, brandId: r.brand_id, accountId: r.account_id, network: r.network, username: r.username, name: r.name, avatar: r.avatar, tags: JSON.parse(r.tags).filter((t: string) => !t.startsWith('aguarda:')), status: r.status, paused: !!r.paused, unread: r.unread, lastMessageAt: r.last_message_at, lastInboundAt: r.last_inbound_at, last };
 }
 
 function cleanConfig(c: any): AutomationConfig {

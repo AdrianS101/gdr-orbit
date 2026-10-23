@@ -1,4 +1,4 @@
-# GDR Orbit
+# GDR Digital
 
 > Seu conteúdo, sua operação e seus resultados no mesmo lugar.
 
@@ -138,7 +138,7 @@ Fonte da interface: Inter (variável, empacotada). Ícones: lucide-react.
 - server/src/social/routes.ts: contas por marca, posts (vídeo, imagem, carrossel) com texto por rede, fluxo Rascunho → Revisão → Aprovado → Agendado → Publicando → Publicado/Falhou/Aguardando manual; agendador a cada 20 s; se o app estava desligado (>15 min de atraso) não publica sozinho; job de publicação não é retomado após queda (evita duplicidade) e reaproveita o container do Instagram em nova tentativa.
 - TikTok: fluxo assistido (baixar vídeo, copiar texto, abrir TikTok, colar link para registrar). Postagem direta exige app aprovado pelo TikTok.
 - web/src/pages/Content.tsx (calendário mensal + lista + filtros), SocialPreview.tsx (prévia Instagram feed/Reels, Facebook, TikTok), SocialAccounts.tsx, MetaSettings.tsx.
-- Validado: fluxo de status e TikTok assistido via API com dados de teste. App Meta "GDR Orbit" (ID 2375388399959584, modo desenvolvimento) criado e perfis conectados pelo usuário; publicação real ainda não testada.
+- Validado: fluxo de status e TikTok assistido via API com dados de teste. App Meta "GDR Digital" (ID 2375388399959584, modo desenvolvimento) criado e perfis conectados pelo usuário; publicação real ainda não testada.
 - Capa do Reels (posts.cover): automática, quadro do vídeo (Instagram `thumb_offset`; Facebook recebe o quadro extraído pelo FFmpeg como `thumb`) ou imagem da Biblioteca (Instagram `cover_url` hospedada como foto não publicada; Facebook `thumb`). Prévia 9:16 e recorte 3:4 da grade. Prévia do post com botão de som (antes o vídeo ficava sempre mudo).
 - Compositor aceita anexar arquivo do computador (vai para a Biblioteca da marca e é selecionado ao ficar pronto) além de vídeos exportados/arquivos da Biblioteca.
 - Google Drive (server/src/drive.ts): OAuth somente leitura com cliente Google do usuário, pastas vinculadas por marca, verificação a cada 15 min (conta novos), importação manual ou automática por pasta, dedupe por id do Drive (assets.source_ref) e SHA-256. Nunca publica. Pendente: credenciais Google do usuário.

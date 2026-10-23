@@ -60,7 +60,11 @@ export async function brandRoutes(app: FastifyInstance) {
     const rows = db.prepare('SELECT * FROM brands ORDER BY name COLLATE NOCASE').all();
     return rows.map((r) => {
       const b = rowToBrand(r);
-      return { ...b, missing: missingFields(b.profile) };
+      // Foto da marca: perfil conectado (Instagram primeiro) ou o logo.
+      const acc = db.prepare("SELECT avatar, network, username, name FROM social_accounts WHERE brand_id = ? AND avatar IS NOT NULL AND status != 'manual' ORDER BY network = 'instagram' DESC LIMIT 1").get(b.id) as any;
+      const nets = (db.prepare("SELECT DISTINCT network FROM social_accounts WHERE brand_id = ? AND status != 'manual'").all(b.id) as any[]).map((x) => x.network);
+      const counts = db.prepare('SELECT (SELECT COUNT(*) FROM projects WHERE brand_id = ?) AS projects, (SELECT COUNT(*) FROM assets WHERE brand_id = ?) AS assets').get(b.id, b.id) as any;
+      return { ...b, missing: missingFields(b.profile), avatar: acc?.avatar ?? (b.profile.logoAssetId ? `/api/assets/${b.profile.logoAssetId}/media/original` : null), handle: acc?.username ?? null, networks: nets, counts };
     });
   });
 

@@ -117,7 +117,7 @@ export function BrandDetailPage() {
           <AlertCircle size={18} color="var(--warning)" style={{ flex: 'none' }} />
           <div>
             <div className="title">Campos que precisam ser preenchidos por você</div>
-            <div className="muted small">O GDR Orbit não inventa informações sobre a marca. Estes campos ficam de fora dos textos da IA até serem preenchidos: {brand.missing.join(', ')}.</div>
+            <div className="muted small">O GDR Digital não inventa informações sobre a marca. Estes campos ficam de fora dos textos da IA até serem preenchidos: {brand.missing.join(', ')}.</div>
           </div>
         </div>
       )}

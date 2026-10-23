@@ -40,7 +40,7 @@ export function CoverPicker({ brandId, videoUrl, images, value, onChange, disabl
       <div className="row small" style={{ gap: 12 }}>
         <label className="row"><input type="radio" disabled={disabled} checked={!value} onChange={() => onChange(null)} /> Automática (a rede escolhe)</label>
         <label className="row"><input type="radio" disabled={disabled} checked={value?.kind === 'frame'} onChange={() => onChange({ kind: 'frame', t: 0 })} /> Quadro do vídeo</label>
-        <label className="row"><input type="radio" disabled={disabled} checked={value?.kind === 'image'} onChange={() => images[0] && onChange({ kind: 'image', assetId: images[0].id })} /> Imagem</label>
+        <label className="row"><input type="radio" disabled={disabled} checked={value?.kind === 'image'} onChange={() => onChange({ kind: 'image', assetId: images[0]?.id ?? '' })} /> Imagem</label>
       </div>
       {value && (
         <div className="row" style={{ gap: 12, alignItems: 'flex-start' }}>
@@ -48,7 +48,7 @@ export function CoverPicker({ brandId, videoUrl, images, value, onChange, disabl
             {value.kind === 'frame' ? (
               <video ref={vRef} src={videoUrl} muted playsInline preload="auto" onLoadedMetadata={(e) => setDur(e.currentTarget.duration || 0)} onSeeked={(e) => drawGrid(e.currentTarget, e.currentTarget.videoWidth, e.currentTarget.videoHeight)} style={{ width: 90, aspectRatio: '9/16', objectFit: 'cover', background: '#000', borderRadius: 6 }} />
             ) : (
-              <img src={img?.url} alt="" style={{ width: 90, aspectRatio: '9/16', objectFit: 'cover', background: '#000', borderRadius: 6 }} />
+              <img src={img?.url ?? undefined} alt="" style={{ width: 90, aspectRatio: '9/16', objectFit: 'cover', background: '#000', borderRadius: 6 }} />
             )}
             <span className="faint small">Reels</span>
           </div>
@@ -71,7 +71,7 @@ export function CoverPicker({ brandId, videoUrl, images, value, onChange, disabl
                     </button>
                   ))}
                 </div>
-                {!disabled && <UploadButton brandId={brandId} accept="image/png,image/jpeg" label="Enviar imagem de capa" onUploaded={(a) => onUploaded(a.id)} />}
+                {!disabled && <UploadButton brandId={brandId} primary accept="image/png,image/jpeg,image/webp" label="Enviar capa do computador" onUploaded={(a) => onUploaded(a.id)} />}
                 <span className="faint small">Ideal 1080×1920 (9:16). O centro 3:4 aparece na grade do perfil.</span>
               </>
             )}

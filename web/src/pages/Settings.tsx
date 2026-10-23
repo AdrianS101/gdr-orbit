@@ -240,7 +240,7 @@ export function SettingsPage() {
 
         <section className="card col" style={{ gap: 12 }}>
           <h2 className="row">
-            <Palette size={16} /> Identidade visual do GDR Orbit
+            <Palette size={16} /> Identidade visual do GDR Digital
           </h2>
           <p className="muted small" style={{ margin: 0 }}>Paleta inicial: preto/grafite com laranja GDR. Ajuste e veja na hora.</p>
           <div className="grid cols-2">

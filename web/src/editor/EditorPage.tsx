@@ -74,7 +74,7 @@ function VersionsDialog({ onClose }: { onClose: () => void }) {
         <input className="input" placeholder="Nome da versão (ex.: enviada ao cliente)" value={label} onChange={(e) => setLabel(e.target.value)} />
         <button className="btn primary" onClick={saveVersion}>Salvar versão</button>
       </div>
-      <div className="faint small">O GDR Orbit também guarda versões automáticas a cada 5 minutos de edição.</div>
+      <div className="faint small">O GDR Digital também guarda versões automáticas a cada 5 minutos de edição.</div>
       <div className="list">
         {list.map((v) => (
           <div key={v.id} className="list-item">
@@ -123,10 +123,10 @@ export function EditorPage() {
   useEffect(() => {
     if (project) {
       useApp.getState().setScope(project.brandId);
-      document.title = `${project.name} — GDR Orbit`;
+      document.title = `${project.name} — GDR Digital`;
     }
     return () => {
-      document.title = 'GDR Orbit';
+      document.title = 'GDR Digital';
     };
   }, [project?.id, project?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 

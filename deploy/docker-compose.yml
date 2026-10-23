@@ -1,4 +1,4 @@
-# Servidor: GDR Orbit + Caddy (https automático).
+# Servidor: GDR Digital + Caddy (https automático).
 # Uso: DOMAIN=<ip-com-tracos>.sslip.io docker compose up -d --build
 services:
   orbit:

@@ -28,7 +28,7 @@ async function request<T>(method: string, url: string, body?: unknown, opts: { s
     });
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e;
-    throw new ApiError(0, 'Sem conexão com o servidor do GDR Orbit.', 'Verifique se o GDR Orbit está rodando no computador (npm start) e recarregue a página.');
+    throw new ApiError(0, 'Sem conexão com o servidor do GDR Digital.', 'Verifique se o GDR Digital está rodando no computador (npm start) e recarregue a página.');
   }
   const text = await res.text();
   let data: any = null;
@@ -68,7 +68,7 @@ export function uploadFile(url: string, file: File, onProgress: (f: number) => v
       if (xhr.status >= 200 && xhr.status < 300) resolve(data);
       else reject(new ApiError(xhr.status, data?.error ?? 'Falha no envio.', data?.hint ?? 'Tente novamente.'));
     };
-    xhr.onerror = () => reject(new ApiError(0, 'O envio foi interrompido.', 'Verifique se o GDR Orbit está rodando e tente novamente.'));
+    xhr.onerror = () => reject(new ApiError(0, 'O envio foi interrompido.', 'Verifique se o GDR Digital está rodando e tente novamente.'));
     xhr.onabort = () => reject(new ApiError(0, 'Envio cancelado.', ''));
     const fd = new FormData();
     fd.append('file', file);

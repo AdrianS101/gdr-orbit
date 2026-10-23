@@ -8,6 +8,7 @@ import { Empty, Field, Spinner } from '../components/ui.tsx';
 import { fmtDateTime, fmtRelative } from '../lib/format.ts';
 import { ProfileAnalysis, AskData, Competitors, Ideas } from './Intelligence.tsx';
 import { MetricsImportModal, type ImportBatch } from './MetricsImport.tsx';
+import { AreaChart } from '../components/AreaChart.tsx';
 
 const LABEL: Record<string, string> = {
   views: 'Visualizações',
@@ -180,6 +181,20 @@ export function ResultsPage() {
           {a.warning && <div className="alert warning small">{a.warning}</div>}
         </section>
       ))}
+
+      {data && data.media.some((m) => typeof m.metrics.views === 'number') && (
+        <section className="dash-chart" style={{ marginBottom: 16 }}>
+          <div className="row"><b>Visualizações dos posts por dia de publicação</b><span className="spacer" /><span className="faint small">{fmtN(data.media.reduce((n, m) => n + (m.metrics.views ?? 0), 0))} no período</span></div>
+          <AreaChart label="Visualizações por dia" points={(() => {
+            const out: { x: string; y: number }[] = [];
+            for (let d = new Date(since + 'T12:00:00'); d <= new Date(until + 'T12:00:00'); d = new Date(d.getTime() + 86400_000)) {
+              const k = iso(d);
+              out.push({ x: k.slice(8, 10) + '/' + k.slice(5, 7), y: data.media.filter((m) => m.postedAt.slice(0, 10) === k).reduce((n, m) => n + (m.metrics.views ?? 0), 0) });
+            }
+            return out;
+          })()} format={(v) => (v >= 1000 ? `${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil` : String(Math.round(v)))} />
+        </section>
+      )}
 
       {data && (data.accounts.length > 0 || data.media.length > 0) && (
         <section className="card col" style={{ gap: 10, marginBottom: 16 }}>

@@ -29,7 +29,7 @@ test('DM com nome, link e pergunta de continuidade', () => {
   assert.match(t, /^Oi, Maria! Segue o guia\./);
   assert.match(t, /Baixe aqui: https:\/\/exemplo\.com\/guia/);
   assert.match(t, /Responda SIM$/);
-  assert.equal(fill('Oi {nome}', { usuario: 'joao' }), 'Oi joao');
+  assert.equal(fill('Oi {nome}', { usuario: 'joao' }), 'Oi'); // o @ nunca vira nome
 });
 
 test('continuidade reconhece a resposta', () => {
@@ -74,4 +74,13 @@ test('fluxo com botão: convite → clique → (segue?) → entrega com link em 
   assert.ok(d.text.startsWith('Aqui está, Ana!'));
   // sem trava: clique entrega direto
   assert.equal(nextAfterClick({ ...c, followGate: null }, 'opened', null, 0).send, 'delivery');
+});
+
+import { firstName } from '../shared/automation.ts';
+test('só o primeiro nome; sem nome, o marcador some sem deixar vírgula', () => {
+  assert.equal(firstName('ADRIAN 🚀 Souza'), 'Adrian');
+  assert.equal(firstName(null), null);
+  assert.equal(fill('Oi, {nome}! Segue.', { nome: 'maria clara silva', usuario: 'mc' }), 'Oi, Maria! Segue.');
+  assert.equal(fill('Oi, {nome}! Segue.', { nome: null, usuario: 'adrian.santtoos' }), 'Oi! Segue.');
+  assert.equal(fill('Fala {nome}, tudo bem?', { nome: '' }), 'Fala, tudo bem?');
 });

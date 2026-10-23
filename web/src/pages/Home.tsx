@@ -5,6 +5,8 @@ import { api, media } from '../lib/api.ts';
 import { useApp, showError } from '../lib/store.ts';
 import { fmtBytes, fmtDuration, fmtRelative, PROJECT_STATUS } from '../lib/format.ts';
 import { Empty } from '../components/ui.tsx';
+import { AreaChart, KpiCard } from '../components/AreaChart.tsx';
+import { Heart, Send, MessageSquare, TrendingUp } from 'lucide-react';
 import { JobRow } from '../components/Shell.tsx';
 import type { Job, ProjectSummary } from '../../../shared/types.ts';
 
@@ -16,6 +18,15 @@ interface HomeData {
   brands: { id: string; name: string; missing: string[] }[];
   review: ProjectSummary[];
   ai: string | null;
+  stats?: {
+    kpis: Record<'views' | 'interactions' | 'posts' | 'reach', { cur: number | null; prev: number | null }>;
+    series: { day: string; views: number; posts: number }[];
+    top: { id: string; caption: string; thumb: string | null; permalink: string | null; network: string; account: string; views: number }[];
+    scheduled: number;
+    pending: number;
+    dms: number;
+    synced: boolean;
+  };
 }
 
 export function HomePage() {
@@ -39,7 +50,7 @@ export function HomePage() {
         <div className="page-head">
           <div>
             <h1>{greet}! Vamos começar.</h1>
-            <p>O GDR Orbit organiza cada cliente em um espaço próprio. Cadastre a primeira marca para importar vídeos e editar.</p>
+            <p>O GDR Digital organiza cada cliente em um espaço próprio. Cadastre a primeira marca para importar vídeos e editar.</p>
           </div>
         </div>
         <Empty icon={<Building2 size={36} />} title="Nenhuma marca cadastrada" action={<button className="btn primary" onClick={() => nav('/marcas?nova=1')}><Plus size={16} /> Cadastrar marca</button>}>
@@ -77,6 +88,48 @@ export function HomePage() {
             <Link to="/configuracoes" style={{ color: 'var(--accent)', fontWeight: 600 }}>Configurar agora</Link>
           </div>
         </div>
+      )}
+
+      {data?.stats && (
+        <section className="dash">
+          <div className="dash-kpis">
+            <KpiCard label="Visualizações" icon={<Eye size={15} />} {...data.stats.kpis.views} />
+            <KpiCard label="Alcance" icon={<TrendingUp size={15} />} {...data.stats.kpis.reach} />
+            <KpiCard label="Interações" icon={<Heart size={15} />} {...data.stats.kpis.interactions} />
+            <KpiCard label="Posts publicados" icon={<Clapperboard size={15} />} {...data.stats.kpis.posts} />
+          </div>
+          <div className="dash-main">
+            <div className="dash-chart">
+              <div className="row">
+                <b>Visualizações dos posts por dia de publicação</b>
+                <span className="spacer" />
+                <span className="faint small">últimos 30 dias · dados da Meta</span>
+              </div>
+              {data.stats.synced ? (
+                <AreaChart label="Visualizações por dia" points={data.stats.series.map((p) => ({ x: p.day.slice(8, 10) + '/' + p.day.slice(5, 7), y: p.views }))} format={(v) => (v >= 1000 ? `${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil` : String(Math.round(v)))} />
+              ) : (
+                <div className="dash-empty">Sem métricas sincronizadas ainda. Conecte os perfis e clique em "Atualizar dados" em <Link to="/resultados" style={{ color: 'var(--accent)' }}>Resultados</Link>.</div>
+              )}
+            </div>
+            <div className="dash-side">
+              <Link to="/conteudo" className="mini-stat"><CalendarDays size={16} /><span><b>{data.stats.scheduled}</b> posts agendados</span></Link>
+              <Link to="/caixa-de-entrada" className="mini-stat"><MessageSquare size={16} /><span><b>{data.stats.pending}</b> conversas esperando você</span></Link>
+              <Link to="/automacoes" className="mini-stat"><Send size={16} /><span><b>{data.stats.dms}</b> DMs automáticas (30 dias)</span></Link>
+              <div className="dash-top">
+                <span className="label">Top conteúdos</span>
+                {!data.stats.top.length && <span className="faint small">Aparece depois da sincronização.</span>}
+                {data.stats.top.map((t, i) => (
+                  <a key={t.id} className="top-line" href={t.permalink ?? undefined} target="_blank" rel="noreferrer">
+                    <b className="faint">{i + 1}</b>
+                    <span className="top-thumb">{t.thumb && <img src={t.thumb} alt="" loading="lazy" />}</span>
+                    <span className="ellipsis small" style={{ flex: 1 }}>{t.caption || '(sem legenda)'}</span>
+                    <b className="small">{t.views.toLocaleString('pt-BR')}</b>
+                  </a>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
       )}
 
       <div className="grid cols-2">

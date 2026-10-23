@@ -90,7 +90,7 @@ export function LibraryPage() {
   const { queue, run } = useUploader(brandId, () => load());
 
   const remove = async (a: Asset) => {
-    if (!confirm(`Excluir "${a.name}" da biblioteca? O arquivo será apagado do armazenamento do GDR Orbit (o arquivo de origem no seu computador não é afetado).`)) return;
+    if (!confirm(`Excluir "${a.name}" da biblioteca? O arquivo será apagado do armazenamento do GDR Digital (o arquivo de origem no seu computador não é afetado).`)) return;
     try {
       await api.del(`/api/assets/${a.id}`);
       load();

@@ -151,6 +151,7 @@ const migrations: string[] = [
     file TEXT NOT NULL, rows INTEGER NOT NULL, created_at TEXT NOT NULL
   );
   `,
+  `ALTER TABLE contacts ADD COLUMN profile_checked_at TEXT;`,
 ];
 
 db.exec('CREATE TABLE IF NOT EXISTS _migrations (n INTEGER PRIMARY KEY)');
