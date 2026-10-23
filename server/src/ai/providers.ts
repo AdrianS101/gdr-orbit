@@ -201,18 +201,26 @@ async function anthropicJson<T>(req: JsonRequest): Promise<JsonResult<T>> {
 
 // ---------- Google Gemini (gratuito até o limite diário) ----------
 
-export const GEMINI_DEFAULT = 'gemini-2.5-flash';
+export const GEMINI_DEFAULT = 'gemini-flash-latest';
+const GEMINI_FALLBACKS = ['gemini-flash-latest', 'gemini-3-flash-preview', 'gemini-flash-lite-latest'];
 
 function geminiKey(): string | null {
   return readSecrets().GEMINI_API_KEY || process.env.GEMINI_API_KEY || null;
 }
 
-async function geminiCall(model: string, key: string, body: unknown) {
-  return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-    body: JSON.stringify(body),
-  });
+/** Chamada com limite de 20 s: se o modelo travar, vale como "sobrecarregado" e o próximo é tentado. */
+async function geminiCall(model: string, key: string, body: unknown): Promise<Response> {
+  try {
+    return await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (e) {
+    if ((e as Error).name === 'TimeoutError') return new Response(JSON.stringify({ error: { message: 'Tempo esgotado.' } }), { status: 504 });
+    throw e;
+  }
 }
 
 /** Escolhe o modelo "flash" mais recente disponível para a chave (se o configurado deixar de existir). */
@@ -237,26 +245,45 @@ async function geminiJson<T>(req: JsonRequest): Promise<JsonResult<T>> {
     contents: [{ role: 'user', parts: [{ text: req.prompt }] }],
     generationConfig: { responseMimeType: 'application/json', responseJsonSchema: req.schema, maxOutputTokens: req.maxTokens ?? 8192 },
   };
-  let res: Response;
+  // Modelo configurado → estável → mais novo disponível. Modelo sobrecarregado (503) ou com cota
+  // esgotada (429) faz o sistema tentar de novo e, se continuar, usar o próximo da lista.
+  const candidates = Array.from(new Set([model, ...GEMINI_FALLBACKS]));
+  let res: Response | null = null;
+  let configuredMissing = false;
   try {
-    res = await geminiCall(model, key, body);
-    if (res.status === 404) {
-      const alt = await latestFlash(key);
-      if (alt && alt !== model) {
-        model = alt;
-        setSetting('ai.geminiModel', alt);
-        res = await geminiCall(model, key, body);
+    for (let i = 0; i < candidates.length; i++) {
+      const m = candidates[i];
+      for (let attempt = 0; attempt < 2; attempt++) {
+        res = await geminiCall(m, key, body);
+        if (res.status !== 503 && res.status !== 500) break;
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
       }
+      if (res!.status === 404) {
+        if (i === 0) configuredMissing = true;
+        if (i === candidates.length - 1) {
+          const alt = await latestFlash(key);
+          if (alt && !candidates.includes(alt)) candidates.push(alt);
+        }
+      }
+      if (res!.ok) {
+        model = m;
+        // Só troca o modelo salvo quando o configurado deixou de existir (não por sobrecarga momentânea).
+        if (configuredMissing) setSetting('ai.geminiModel', m);
+        break;
+      }
+      if (![404, 429, 500, 503, 504].includes(res!.status)) break;
     }
   } catch {
     throw new AiError('Sem conexão com o Gemini.', 'Verifique sua internet e tente novamente.');
   }
+  res = res!;
   const j: any = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = String(j?.error?.message ?? res.status);
     if (res.status === 400 && /API key/i.test(msg)) throw new AiError('A chave do Gemini foi recusada.', 'Confira a chave em aistudio.google.com e cole novamente.');
     if (res.status === 403) throw new AiError('A chave do Gemini foi recusada.', 'Confira a chave em aistudio.google.com e cole novamente.');
     if (res.status === 429) throw new AiError('Limite gratuito do Gemini atingido por agora.', 'Aguarde alguns minutos (o limite é por minuto e por dia) e tente de novo.');
+    if (res.status === 503 || res.status === 500 || res.status === 504) throw new AiError('Os modelos do Gemini estão sobrecarregados agora (problema temporário do Google).', 'Tente de novo em alguns minutos.');
     throw new AiError(`O Gemini retornou um erro: ${msg.slice(0, 200)}`, 'Tente novamente em instantes.');
   }
   const text = (j.candidates?.[0]?.content?.parts ?? []).map((p: any) => p.text ?? '').join('');
