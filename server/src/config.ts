@@ -22,7 +22,7 @@ export const config = {
   tmpDir: path.join(dataDir, 'tmp'),
   modelsDir: path.resolve(process.env.ORBIT_MODELS_DIR ?? path.join(root, 'data', 'models')),
   secretsFile: path.join(dataDir, 'secrets.json'),
-  webDist: path.join(root, 'web', 'dist'),
+  webDist: path.join(root, 'dist'),
   host: process.env.ORBIT_HOST ?? '127.0.0.1',
   port: Number(process.env.ORBIT_PORT ?? 4310),
   ffmpeg: process.env.FFMPEG_PATH ?? 'ffmpeg',
