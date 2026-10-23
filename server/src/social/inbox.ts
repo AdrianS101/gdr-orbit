@@ -9,15 +9,17 @@ import { graphVersion, MetaError } from './meta.ts';
 import { generateJson } from '../ai/providers.ts';
 import { brandContext } from '../ai/copy.ts';
 import { rowToBrand } from '../lib/mappers.ts';
+import { backgroundAllowed, isAppBlock, metaFetch } from './meta-guard.ts';
 
 const G = () => `https://graph.facebook.com/${graphVersion()}`;
 
 async function call(method: 'GET' | 'POST', path: string, params: Record<string, string>, token: string, body?: unknown): Promise<any> {
   const url = `${G()}/${path}?${new URLSearchParams({ ...params, access_token: token })}`;
-  const r = await fetch(url, body ? { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : { method });
+  const r = await metaFetch(url, body ? { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : { method });
   const j: any = await r.json().catch(() => ({}));
   if (!r.ok || j.error) {
     const e = j.error ?? {};
+    if (isAppBlock(String(e.message ?? ''))) throw new MetaError('A Meta bloqueou temporariamente o app.', 'Confirme a conta em developers.facebook.com. Não precisa reconectar os perfis.');
     if (e.code === 10 || e.code === 200 || e.code === 230) throw new MetaError(`A Meta não liberou mensagens/comentários para esta conexão (${e.message}).`, 'Reconecte o perfil aceitando as permissões de mensagens e comentários e ative "Permitir acesso a mensagens" no app do Instagram.');
     if (e.code === 551 || e.error_subcode === 2018278) throw new MetaError('A pessoa não pode receber esta mensagem agora (fora da janela permitida pela Meta).', 'Responda quando ela mandar uma nova mensagem.');
     throw new MetaError(String(e.message ?? `HTTP ${r.status}`));
@@ -317,12 +319,18 @@ async function pollAccount(acc: any) {
   try {
     media =
       acc.network === 'instagram'
-        ? (await call('GET', `${acc.external_id}/media`, { fields: 'id,timestamp', limit: '15' }, token)).data ?? []
-        : (await call('GET', `${acc.external_id}/published_posts`, { fields: 'id,created_time', limit: '15' }, token)).data ?? [];
+        ? (await call('GET', `${acc.external_id}/media`, { fields: 'id,timestamp,comments_count', limit: '12' }, token)).data ?? []
+        : (await call('GET', `${acc.external_id}/published_posts`, { fields: 'id,created_time,comments.summary(true).limit(0)', limit: '12' }, token)).data ?? [];
   } catch (e) {
     errors.push(`Comentários: ${(e as Error).message}`);
   }
+  // Só busca os comentários dos posts cujo total de comentários mudou desde a última verificação.
+  const seen = getSetting<Record<string, number>>(`inbox.cc.${acc.id}`, {});
+  const nextSeen: Record<string, number> = {};
   for (const md of media) {
+    const count = Number(md.comments_count ?? md.comments?.summary?.total_count ?? -1);
+    nextSeen[md.id] = count;
+    if (count >= 0 && seen[md.id] === count) continue;
     const fields = acc.network === 'instagram' ? 'id,text,timestamp,username,from' : 'id,message,created_time,from';
     const cm = await call('GET', `${md.id}/comments`, { fields, limit: '50' }, token).catch(() => ({ data: [] }));
     for (const c of cm.data ?? []) {
@@ -335,6 +343,7 @@ async function pollAccount(acc: any) {
       if (isNew && at >= live) await onComment(acc, db.prepare('SELECT * FROM contacts WHERE id = ?').get(contact.id), { id: c.id, text, at, mediaId: md.id });
     }
   }
+  setSetting(`inbox.cc.${acc.id}`, nextSeen);
   await enrichContacts(acc, token).catch(() => {});
   setSetting(`inbox.since.${acc.id}`, started);
   db.prepare('UPDATE social_accounts SET error = NULL WHERE id = ? AND error LIKE ?').run(acc.id, '%mensagens%');
@@ -345,7 +354,7 @@ async function pollAccount(acc: any) {
 async function enrichContacts(acc: any, token: string) {
   if (acc.network !== 'instagram') return;
   const week = new Date(Date.now() - 7 * 86400_000).toISOString();
-  const list = db.prepare("SELECT id, external_id FROM contacts WHERE account_id = ? AND (avatar IS NULL OR name IS NULL) AND external_id NOT LIKE 'user:%' AND (profile_checked_at IS NULL OR profile_checked_at < ?) ORDER BY last_message_at DESC LIMIT 8").all(acc.id, week) as any[];
+  const list = db.prepare("SELECT id, external_id FROM contacts WHERE account_id = ? AND (avatar IS NULL OR name IS NULL) AND external_id NOT LIKE 'user:%' AND (profile_checked_at IS NULL OR profile_checked_at < ?) ORDER BY last_message_at DESC LIMIT 3").all(acc.id, week) as any[];
   for (const c of list) {
     const r = await call('GET', c.external_id, { fields: 'name,username,profile_pic' }, token).catch(() => null);
     db.prepare('UPDATE contacts SET name = COALESCE(?, name), username = COALESCE(?, username), avatar = COALESCE(?, avatar), profile_checked_at = ? WHERE id = ?').run(r?.name ?? null, r?.username ?? null, r?.profile_pic ?? null, now(), c.id);
@@ -354,7 +363,7 @@ async function enrichContacts(acc: any, token: string) {
 
 let polling = false;
 export async function pollInbox() {
-  if (polling) return;
+  if (polling || !backgroundAllowed()) return;
   polling = true;
   try {
     const accs = db.prepare("SELECT * FROM social_accounts WHERE network IN ('instagram','facebook') AND token IS NOT NULL AND status = 'connected'").all() as any[];
@@ -371,6 +380,9 @@ export async function pollInbox() {
 }
 
 export function startInbox() {
-  setInterval(() => pollInbox().catch(() => {}), 60_000).unref();
+  // Erros de bloqueio do app não são problema de permissão do perfil: não pedem reconexão.
+  db.prepare("UPDATE social_accounts SET error = NULL WHERE error LIKE '%Cannot call API for app%' OR error LIKE '%API access blocked%'").run();
+  // A cada 3 min (antes era 1): bem abaixo do limite de uso da Meta para apps em desenvolvimento.
+  setInterval(() => pollInbox().catch(() => {}), 180_000).unref();
   setTimeout(() => pollInbox().catch(() => {}), 15_000).unref();
 }

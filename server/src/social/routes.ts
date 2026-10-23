@@ -13,6 +13,7 @@ import { seal, unseal } from '../lib/vault.ts';
 import { readSecrets, setSecret } from '../ai/providers.ts';
 import { enqueue, type JobContext } from '../jobs/queue.ts';
 import { uid } from '../../../shared/timeline.ts';
+import { metaHealth } from './meta-guard.ts';
 import { exchangeAndList, metaApp, MetaError, oauthUrl, publishFacebook, publishInstagram, verifyAccount, type MetaCandidate, type PublishFile } from './meta.ts';
 
 const EDITABLE = ['draft', 'review', 'approved', 'failed'];
@@ -268,6 +269,8 @@ export async function socialRoutes(app: FastifyInstance) {
   });
 
   // Mídias publicáveis: vídeos exportados + imagens/vídeos da biblioteca.
+  app.get('/api/social/meta-health', async () => metaHealth());
+
   app.get('/api/social/media', async (req) => {
     const { brandId } = req.query as { brandId: string };
     const exports = (db.prepare('SELECT e.*, p.name AS project_name FROM exports e JOIN projects p ON p.id = e.project_id WHERE e.brand_id = ? ORDER BY e.created_at DESC').all(brandId) as any[])

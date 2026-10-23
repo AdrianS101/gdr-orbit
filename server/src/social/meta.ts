@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getSetting } from '../db.ts';
 import { readSecrets } from '../ai/providers.ts';
+import { isAppBlock, metaFetch } from './meta-guard.ts';
 
 export const META_SCOPES = ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts', 'instagram_basic', 'instagram_content_publish', 'business_management', 'instagram_manage_insights', 'read_insights', 'ads_read', 'instagram_manage_messages', 'instagram_manage_comments', 'pages_messaging', 'pages_read_user_content', 'pages_manage_engagement'];
 
@@ -28,7 +29,7 @@ export class MetaError extends Error {
 async function call(url: string, init?: RequestInit): Promise<any> {
   let res: Response;
   try {
-    res = await fetch(url, init);
+    res = await metaFetch(url, init);
   } catch {
     throw new MetaError('Sem conexão com a Meta.', 'Verifique a internet e tente novamente.');
   }
@@ -37,6 +38,7 @@ async function call(url: string, init?: RequestInit): Promise<any> {
     const e = j.error ?? {};
     const msg = String(e.error_user_msg || e.message || `HTTP ${res.status}`);
     if (e.code === 190) throw new MetaError('A conexão com a Meta expirou ou foi revogada.', 'Reconecte o perfil em Marcas → Perfis sociais.');
+    if (isAppBlock(msg)) throw new MetaError('A Meta bloqueou temporariamente o app (atividade incomum na conta de desenvolvedor).', 'Entre em developers.facebook.com com sua conta, clique em "Confirmar conta" e conclua as etapas. Não precisa reconectar os perfis.');
     if (e.code === 10 || e.code === 200) throw new MetaError(`Permissão negada pela Meta: ${msg}`, 'Reconecte e aceite todas as permissões pedidas. A conta do Instagram precisa ser profissional e ligada a uma Página.');
     if (e.code === 4 || e.code === 17 || e.code === 32 || e.code === 613) throw new MetaError('Limite de uso da Meta atingido.', 'Aguarde alguns minutos e tente novamente.');
     throw new MetaError(`A Meta recusou a operação: ${msg.slice(0, 300)}`, 'Confira o formato do arquivo e tente novamente.');

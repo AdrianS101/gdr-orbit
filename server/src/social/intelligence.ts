@@ -10,6 +10,7 @@ import { generateJson, geminiResearch, AiError } from '../ai/providers.ts';
 import { brandContext } from '../ai/copy.ts';
 import { graphVersion, MetaError } from './meta.ts';
 import { emptyTimeline } from '../../../shared/timeline.ts';
+import { metaFetch } from './meta-guard.ts';
 
 const G = () => `https://graph.facebook.com/${graphVersion()}`;
 const asApp = (e: unknown) => (e instanceof MetaError ? new AppError(400, e.message, e.hint) : e instanceof AiError ? new AppError(503, e.message, e.hint) : e);
@@ -60,7 +61,7 @@ export function computeStats(media: ReturnType<typeof mediaOf>, days: number) {
 
 async function competitorData(acc: any, username: string) {
   const f = `business_discovery.username(${username}){username,name,biography,followers_count,media_count,media.limit(25){caption,like_count,comments_count,media_product_type,media_type,timestamp,permalink}}`;
-  const r = await fetch(`${G()}/${acc.external_id}?fields=${encodeURIComponent(f)}&access_token=${unseal(acc.token)}`);
+  const r = await metaFetch(`${G()}/${acc.external_id}?fields=${encodeURIComponent(f)}&access_token=${unseal(acc.token)}`);
   const j: any = await r.json();
   if (j.error) throw new MetaError(j.error.code === 110 || /not found|não encontr/i.test(j.error.message) ? `Perfil @${username} não encontrado ou não é profissional.` : j.error.message);
   const b = j.business_discovery;
@@ -126,7 +127,7 @@ export async function intelligenceRoutes(app: FastifyInstance) {
     const stats = computeStats(media, days);
     let profile: any = {};
     try {
-      profile = await (await fetch(`${G()}/${acc.external_id}?fields=username,name,biography,website,followers_count,media_count&access_token=${unseal(acc.token)}`)).json();
+      profile = await (await metaFetch(`${G()}/${acc.external_id}?fields=username,name,biography,website,followers_count,media_count&access_token=${unseal(acc.token)}`)).json();
     } catch {
       /* perfil indisponível */
     }

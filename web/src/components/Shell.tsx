@@ -190,7 +190,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <Settings size={16} />
           </NavLink>
         </header>
-        <div className="content">{children}</div>
+        <div className="content"><MetaHealthBanner />{children}</div>
       </div>
       <nav className="bottom-nav">
         {MOBILE_NAV.map((n) => (
@@ -211,4 +211,29 @@ export function BrandAvatar({ b, size = 24 }: { b: { name: string; avatar?: stri
   if (b.avatar) return <img className="brand-av" src={b.avatar} alt="" style={st} loading="lazy" />;
   const ini = b.name.split(/s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
   return <span className="brand-av" style={{ ...st, background: b.profile.colors[0]?.hex ?? 'var(--surface-3)', fontSize: size * 0.4 }}>{ini}</span>;
+}
+
+/** Aviso quando a Meta bloqueia o app ou pausa por uso alto (não é para reconectar perfis). */
+export function MetaHealthBanner() {
+  const [h, setH] = useState<{ blocked: { since: string; message: string } | null; pausedUntil: string | null } | null>(null);
+  useEffect(() => {
+    const load = () => api.get('/api/social/meta-health').then(setH, () => {});
+    load();
+    const t = setInterval(load, 120_000);
+    return () => clearInterval(t);
+  }, []);
+  if (h?.blocked) {
+    return (
+      <div className="alert danger small" style={{ margin: '0 0 12px' }}>
+        <div>
+          <b>A Meta bloqueou temporariamente o app</b> (desde {new Date(h.blocked.since).toLocaleString('pt-BR')}). Instagram e Facebook ficam sem dados até você confirmar a conta de desenvolvedor. <b>Não precisa reconectar os perfis.</b>{' '}
+          <a href="https://developers.facebook.com/apps/" target="_blank" rel="noreferrer" style={{ color: 'var(--accent)', fontWeight: 600 }}>Abrir o painel da Meta e clicar em "Confirmar conta"</a>. O GDR Digital testa de novo sozinho a cada 15 min.
+        </div>
+      </div>
+    );
+  }
+  if (h?.pausedUntil && Date.parse(h.pausedUntil) > Date.now()) {
+    return <div className="alert warning small" style={{ margin: '0 0 12px' }}>Uso da Meta perto do limite: as atualizações automáticas voltam às {new Date(h.pausedUntil).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} (proteção para a Meta não bloquear o app).</div>;
+  }
+  return null;
 }

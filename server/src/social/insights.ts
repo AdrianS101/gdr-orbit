@@ -6,12 +6,13 @@ import { unseal } from '../lib/vault.ts';
 import { uid } from '../../../shared/timeline.ts';
 import { graphVersion, MetaError } from './meta.ts';
 import type { JobContext } from '../jobs/queue.ts';
+import { metaFetch } from './meta-guard.ts';
 
 const G = () => `https://graph.facebook.com/${graphVersion()}`;
 const DAY = 86400;
 
 async function get(path: string, params: Record<string, string>, token: string): Promise<any> {
-  const r = await fetch(`${G()}/${path}?${new URLSearchParams({ ...params, access_token: token })}`);
+  const r = await metaFetch(`${G()}/${path}?${new URLSearchParams({ ...params, access_token: token })}`);
   const j: any = await r.json().catch(() => ({}));
   if (!r.ok || j.error) {
     const e = j.error ?? {};
@@ -137,7 +138,7 @@ export async function syncMedia(acc: any, days: number, onStep: (msg: string) =>
   if (acc.network === 'instagram') {
     let url: string | null = `${G()}/${acc.external_id}/media?${new URLSearchParams({ fields: 'id,caption,media_type,media_product_type,permalink,thumbnail_url,media_url,timestamp,like_count,comments_count', limit: '50', access_token: token })}`;
     while (url) {
-      const j: any = await (await fetch(url)).json();
+      const j: any = await (await metaFetch(url)).json();
       if (j.error) throw new MetaError(j.error.message);
       for (const m of j.data ?? []) {
         if (Date.parse(m.timestamp) < since) {
