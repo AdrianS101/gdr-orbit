@@ -18,7 +18,7 @@ const SCHEMA = {
         type: 'object',
         required: ['type'],
         properties: {
-          type: { type: 'string', enum: ['remove_pauses', 'cut', 'keep_only', 'captions', 'logo', 'text', 'transitions', 'filter', 'zoom', 'dynamic_zoom', 'speed', 'music', 'format'] },
+          type: { type: 'string', enum: ['remove_pauses', 'cut', 'keep_only', 'captions', 'logo', 'text', 'transitions', 'filter', 'zoom', 'dynamic_zoom', 'speed', 'music', 'format', 'denoise', 'pip', 'broll'] },
           start: { type: 'number' },
           end: { type: 'number' },
           duration: { type: 'number' },
@@ -36,6 +36,7 @@ const SCHEMA = {
           assetId: { type: 'string' },
           volume: { type: 'number' },
           ducking: { type: 'boolean' },
+          level: { type: 'string', enum: ['light', 'strong'] },
         },
       },
     },
@@ -83,6 +84,7 @@ export async function planEdit(input: {
     .map((p, i) => `#${i + 1} ${p.start.toFixed(1)}–${p.end.toFixed(1)}s${p.clip.speed !== 1 ? ` vel ${p.clip.speed}x` : ''}${p.clip.color ? ` filtro ${p.clip.color.preset}` : ''}${p.clip.zoom ? ' zoom' : ''}${p.clip.transition ? ` transição ${p.clip.transition.type}` : ''}`)
     .join('\n');
   const music = input.assets.filter((a) => a.kind === 'audio' && a.status === 'ready');
+  const visuals = input.assets.filter((a) => (a.kind === 'video' || a.kind === 'image') && a.status === 'ready').slice(0, 40);
   const prompt = `${ACTION_CATALOG}
 
 # Projeto (marca ${input.brandName})
@@ -91,6 +93,8 @@ Trechos:
 ${clips || '(vazio)'}
 Legendas: ${tl.captions.cues.length ? `${tl.captions.cues.length} (estilo ${tl.captions.style.preset})` : 'não geradas'}. Títulos: ${(tl.texts ?? []).map((t) => `"${t.text}" ${t.start.toFixed(1)}s`).join(', ') || 'nenhum'}.
 Logo da marca: ${input.profile.logoAssetId ? 'disponível' : 'não definido'}${(tl.overlays ?? []).length ? ' (já aplicado)' : ''}. Cores da marca: ${input.profile.colors.map((c) => c.hex).join(', ') || 'não definidas'}.
+Vídeos e imagens na biblioteca (para pip/broll): ${visuals.map((m) => `${m.id} ${m.kind} "${m.name}"${m.meta.duration ? ` ${m.meta.duration.toFixed(0)}s` : ''}${m.tags.length ? ` [${m.tags.join(', ')}]` : ''}`).join('; ') || 'nenhum'}.
+Faixas extras: ${(tl.layers ?? []).length} sobreposições, ${(tl.audioClips ?? []).length} áudios. Redução de ruído: ${tl.clips.some((c) => c.denoise) ? 'ligada' : 'desligada'}.
 Músicas na biblioteca: ${music.map((m) => `${m.id} "${m.name}"${m.tags.length ? ` [${m.tags.join(', ')}]` : ''}`).join('; ') || 'nenhuma'}.
 Tom de voz: ${input.profile.toneOfVoice || 'não informado'}.
 

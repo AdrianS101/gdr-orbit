@@ -105,3 +105,11 @@
 .chat-msg.assistant { align-self: flex-start; background: var(--surface-2); border: 1px solid var(--border); }
 .ed-tabs { overflow-y: auto; }
 .text-block { position: absolute; top: 5px; height: 24px; background: rgba(34,197,94,.2); border: 1px solid rgba(34,197,94,.5); border-radius: 5px; font-size: 10.5px; padding: 3px 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
+
+/* Faixas livres e de áudio (Etapa 2) */
+.layer-track, .audio-track { height: 34px; }
+.layer-block { background: rgba(96, 165, 250, 0.2); border-color: rgba(96, 165, 250, 0.55); }
+.audio-block { background: rgba(34, 197, 94, 0.18); border-color: rgba(34, 197, 94, 0.5); }
+.kf-mark { position: absolute; top: 7px; width: 8px; height: 8px; background: var(--accent); transform: rotate(45deg); border: 1px solid var(--bg); pointer-events: none; }
+.kf-list { display: flex; flex-direction: column; gap: 4px; }
+.kf-list .row { gap: 6px; }

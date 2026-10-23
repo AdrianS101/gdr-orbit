@@ -1,6 +1,7 @@
 // Painéis de efeitos, textos e música.
 import { useEditor } from './store.ts';
 import { updateTimeline } from './actions.ts';
+import { addAudioClip } from './LayerPanels.tsx';
 import { useApp } from '../lib/store.ts';
 import { Field } from '../components/ui.tsx';
 import { UploadButton } from '../pages/Library.tsx';
@@ -151,6 +152,14 @@ export function MusicPanel() {
         <span className="muted small" style={{ flex: 1 }}>Use músicas que você tem direito de usar. Registre a origem nas etiquetas.</span>
         <UploadButton brandId={project.brandId} accept="audio/*" label="Enviar" onUploaded={() => useEditor.getState().refreshAssets()} />
       </div>
+      <div className="label">Faixas de áudio (narração, efeitos)</div>
+      <p className="faint small" style={{ margin: 0 }}>Entra no cursor, numa faixa própria, com volume, fades e redução de ruído.</p>
+      {audios.map((a) => (
+        <button key={'ac' + a.id} className="btn ghost sm" style={{ justifyContent: 'flex-start' }} onClick={() => addAudioClip(a)}>
+          <Plus size={14} /> <span className="ellipsis">{a.name}</span>
+        </button>
+      ))}
+      <div className="label" style={{ marginTop: 6 }}>Trilha de fundo (com ducking)</div>
       {audios.map((a) => (
         <button key={a.id} className={`btn sm ${m?.assetId === a.id ? 'primary' : ''}`} style={{ justifyContent: 'flex-start' }} onClick={() => updateTimeline((tl) => ({ ...tl, music: { assetId: a.id, volume: 0.35, ducking: true, duckLevel: 0.25, fadeIn: 0.5, fadeOut: 1.5, offset: 0 } }), 'Adicionar música')}>
           <Music size={14} /> <span className="ellipsis">{a.name}</span>

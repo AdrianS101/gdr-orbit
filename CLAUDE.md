@@ -120,7 +120,15 @@ Fonte da interface: Inter (variável, empacotada). Ícones: lucide-react.
 - Títulos, lower thirds e chamadas como TextClip no mesmo ASS das legendas (mesmo renderizador nos dois lados).
 - shared/edit-actions.ts: catálogo de ações (remove_pauses, cut, keep_only, captions, logo, text, transitions, filter, zoom, dynamic_zoom, speed, music, format). Chat da IA (server/src/ai/edit-chat.ts) só escolhe ações deste catálogo; a interface mostra o plano, aplica cada ação como um passo de desfazer. Ações rápidas usam o mesmo motor sem IA.
 - Provedor Gemini (gratuito, chave em Configurações → IA), preferido no modo automático para não gastar tokens do Claude. Validado: render real com zoom/filtro/transições/título/música; ações rápidas na interface. Pendente de validar: chat com Gemini (precisa da chave do usuário).
-- Ainda falta da Etapa 2: múltiplas faixas livres, keyframes, sobreposição de vídeos (PiP), redução de ruído, "3 Reels a partir de uma entrevista", referência de ritmo.
+- Faixas livres e quadros-chave (shared/keyframes.ts):
+  - `layers` (vídeo/imagem em faixas acima da principal): modo PiP (largura relativa) ou B-roll (cobre o quadro); posição, escala, rotação e opacidade fixas ou por quadros-chave (linear/suave). Logo/imagens (`overlays`) também aceitam rotação e quadros-chave.
+  - Mesma matemática nos dois lados: `transformAt` (prévia, CSS `translate(-50%,-50%) rotate()` + largura × escala) ⇔ `kfExpr` (expressões if/lt/clip no `overlay` x/y, `rotate` e `scale eval=frame`); opacidade animada via `sendcmd` no `colorchannelmixer`. Teste compara a expressão do FFmpeg com a prévia em vários instantes.
+  - `audioClips` (faixas de áudio: narração, efeitos) com volume e fades lineares (afade ⇔ `audioClipGain`), mixados com `adelay` + `amix`.
+  - Cortes (`rippleDelete`) deslocam o início das faixas livres.
+- Redução de ruído por trecho/faixa (`denoise: light|strong` → highpass + afftdn). A prévia comum toca o original; o painel oferece "Ouvir amostra tratada" (15 s gerados no servidor com a mesma cadeia da exportação).
+- IA: ações `denoise`, `pip` (com entrada animada por quadros-chave) e `broll` no catálogo do chat.
+- Validado: render sintético com PiP animado + B-roll + logo girado + faixa de áudio + redução de ruído; editor no navegador (servidor de teste): PiP, quadros-chave, amostra tratada, exportação.
+- Ainda falta da Etapa 2: "3 Reels a partir de uma entrevista", referência de ritmo, transições com sobreposição entre trechos.
 
 ## Etapa 3 (em andamento) — redes sociais
 - server/src/social/meta.ts: OAuth da Meta (app do próprio usuário, modo desenvolvimento), Páginas + Instagram profissional, publicação real: Reels (upload resumível, sem URL pública), imagem (hospedada como foto não publicada da Página para obter URL), carrossel (2–10), vídeo/foto/multi-foto no Facebook. "Publicado" só com id + permalink da API. Tokens criptografados (AES-GCM, lib/vault.ts).
@@ -161,7 +169,7 @@ Fonte da interface: Inter (variável, empacotada). Ícones: lucide-react.
 - **Desempenho**: neste notebook (i5-5200U, 2 núcleos) o render de fonte 4K60 roda ~0,25× o tempo real na CPU; Intel QuickSync ~2× mais rápido. A transcrição "Precisa" leva ~1× a duração do vídeo; a "Rápida" (whisper-base) ~3× mais rápida com mais erros. Primeira transcrição baixa ~250 MB do Hugging Face.
 - Prévia depende de navegador com WebAssembly + OffscreenCanvas (Chrome/Edge/Firefox atuais). Se a prévia de legendas falhar, a exportação não é afetada (aviso na tela).
 - Fontes de legenda: fontes instaladas no Windows ou enviadas na Biblioteca da marca (TTF/OTF).
-- Faixa de vídeo é sequencial (sem sobreposição de vídeos, transições ou faixas de música) — vem na Etapa 2.
+- Faixa principal é sequencial (transições sem sobreposição entre trechos); vídeos sobrepostos ficam nas faixas livres. A timeline termina com a faixa principal (faixas livres além disso são cortadas).
 - Senha local única; sem multiusuário.
 
 ## Próximas etapas e critérios de conclusão

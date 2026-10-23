@@ -55,6 +55,7 @@ const QUICK: { label: string; action: EditAction }[] = [
   { label: 'Zoom dinâmico', action: { type: 'dynamic_zoom' } },
   { label: 'Transições nos cortes', action: { type: 'transitions', transition: 'fade', duration: 0.4 } },
   { label: 'Filtro cinema', action: { type: 'filter', preset: 'cinema' } },
+  { label: 'Reduzir ruído', action: { type: 'denoise', level: 'light' } },
 ];
 
 const EXAMPLES = ['Retire as pausas e deixe o vídeo mais dinâmico', 'Coloque legendas animadas nas cores da marca e o logo no canto', 'Crie um título de abertura e termine com uma chamada para seguir o perfil'];

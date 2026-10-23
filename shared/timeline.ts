@@ -188,7 +188,10 @@ export function rippleDelete(tl: Timeline, a: number, b: number): Timeline {
   const shift = (t: number) => (t >= b ? t - d : t > a ? a : t);
   const texts = cur.texts?.map((x) => ({ ...x, start: shift(x.start), end: shift(x.end) })).filter((x) => x.end - x.start > 0.05);
   const overlays = cur.overlays.map((o) => ({ ...o, start: shift(o.start), end: shift(o.end) })).filter((o) => o.end - o.start > 0.05);
-  return { ...cur, clips: keep, overlays, ...(texts ? { texts } : {}) };
+  // Faixas livres acompanham pelo início (mantêm a duração).
+  const layers = cur.layers?.map((l) => ({ ...l, start: shift(l.start) }));
+  const audioClips = cur.audioClips?.map((l) => ({ ...l, start: shift(l.start) }));
+  return { ...cur, clips: keep, overlays, ...(texts ? { texts } : {}), ...(layers ? { layers } : {}), ...(audioClips ? { audioClips } : {}) };
 }
 
 export function fmtTime(t: number, withMs = false): string {

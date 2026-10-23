@@ -4,7 +4,7 @@ import { api, ApiError } from '../lib/api.ts';
 import { showError } from '../lib/store.ts';
 import type { Asset, CaptionWord, Project, Timeline } from '../../../shared/types.ts';
 
-export type Selection = { kind: 'clip' | 'overlay' | 'cue'; id: string } | null;
+export type Selection = { kind: 'clip' | 'overlay' | 'cue' | 'layer' | 'audio'; id: string } | null;
 export type SaveState = 'saved' | 'dirty' | 'saving' | 'error' | 'conflict';
 export type PanelTab = 'chat' | 'media' | 'captions' | 'effects' | 'text' | 'music' | 'elements' | 'post' | 'format';
 
@@ -52,7 +52,7 @@ interface EditorState {
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let lastCommit = { label: '', at: 0 };
-const CONTINUOUS = new Set(['Cor', 'Volume', 'Foco', 'Tamanho do elemento', 'Opacidade', 'Estilo da legenda', 'Tempo do elemento', 'Ajustar tempo da legenda']);
+const CONTINUOUS = new Set(['Cor', 'Transformar', 'Volume da faixa', 'Volume', 'Foco', 'Tamanho do elemento', 'Opacidade', 'Estilo da legenda', 'Tempo do elemento', 'Ajustar tempo da legenda']);
 
 function storeDraft(projectId: string, tl: Timeline, baseRevision: number) {
   try {

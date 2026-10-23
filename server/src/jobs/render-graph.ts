@@ -1,8 +1,9 @@
 // Monta o comando do FFmpeg a partir da timeline.
 // Usa a mesma matemática de enquadramento, posição de logo e legendas (ASS) da prévia.
-import type { AssetMeta, Timeline } from '../../../shared/types.ts';
+import type { AssetMeta, Keyframe, Timeline, Transform } from '../../../shared/types.ts';
 import { clipDuration, even, layoutClips, timelineDuration } from '../../../shared/timeline.ts';
 import { clipFx, colorFfmpeg, isNeutral, speechIntervals, zoomExpr } from '../../../shared/effects.ts';
+import { denoiseFilter, isAnimated, kfExpr, layerDuration, maxScale, opacityCommands, overlayBase, sortKfs, stackedLayers } from '../../../shared/keyframes.ts';
 
 const fx2 = (v: number) => Math.min(1, Math.max(0, v));
 
@@ -105,7 +106,7 @@ export function buildRenderArgs(tl: Timeline, st: RenderSettings, inp: RenderInp
     const tempo = atempoChain(c.speed);
     if (asset.meta.hasAudio) {
       filters.push(
-        `[${vi}:a:0]asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo${tempo ? ',' + tempo : ''},${vol},apad=whole_dur=${f(D)},atrim=duration=${f(D)},asetpts=PTS-STARTPTS[a${i}]`,
+        `[${vi}:a:0]asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo${c.denoise ? ',' + denoiseFilter(c.denoise) : ''}${tempo ? ',' + tempo : ''},${vol},apad=whole_dur=${f(D)},atrim=duration=${f(D)},asetpts=PTS-STARTPTS[a${i}]`,
       );
     } else {
       filters.push(`anullsrc=r=48000:cl=stereo,atrim=duration=${f(D)},aformat=sample_fmts=fltp:channel_layouts=stereo[a${i}]`);
@@ -116,7 +117,33 @@ export function buildRenderArgs(tl: Timeline, st: RenderSettings, inp: RenderInp
   filters.push(`${concatPads.join('')}concat=n=${placed.length}:v=1:a=1[vcat][acat]`);
   let vLabel = 'vcat';
 
-  // Sobreposições (logo e imagens) — mesma geometria da prévia.
+  // Faixas livres (picture-in-picture/B-roll), depois logo/imagens — mesma geometria e quadros-chave da prévia.
+  const extraAudio: string[] = [];
+  stackedLayers(tl).forEach((l, k) => {
+    const asset = inp.assets[l.assetId];
+    if (!asset || !asset.meta.width || !asset.meta.height) return;
+    const len = Math.min(layerDuration(l), total - l.start);
+    if (len <= 0.04) return;
+    const isImage = !asset.meta.duration || asset.meta.hasVideo === false || /\.(png|jpe?g|webp)$/i.test(asset.file);
+    if (isImage) args.push('-loop', '1', '-t', f(len), '-i', asset.file);
+    else args.push('-ss', f(l.in), '-t', f(len), '-i', asset.file);
+    const li = inputIndex++;
+    const sm = maxScale(l, l.keyframes);
+    const square = asset.meta.sar && Math.abs(asset.meta.sar - 1) > 0.01 ? "scale='trunc(iw*sar/2)*2':ih," : '';
+    const content =
+      l.mode === 'cover'
+        ? `scale=${even(W * sm)}:${even(H * sm)}:force_original_aspect_ratio=increase:flags=bicubic,crop=${even(W * sm)}:${even(H * sm)}`
+        : `scale=${Math.max(2, even(l.width * W * sm))}:-2:flags=bicubic`;
+    // O tempo do item passa a ser o tempo da timeline: as expressões dos quadros-chave usam t direto.
+    const pre = `[${li}:v]setpts=PTS-STARTPTS,fps=${fps},${square}setsar=1,${content},format=rgba,setpts=PTS+${f(l.start)}/TB`;
+    vLabel = placeTransformed(filters, vLabel, pre, l, l.keyframes, l.start, l.start + len, sm, `ly${k}`);
+    if (!isImage && asset.meta.hasAudio && l.volume > 0) {
+      const dn = l.denoise ? ',' + denoiseFilter(l.denoise) : '';
+      filters.push(`[${li}:a:0]asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo${dn},volume=${f(l.volume)},adelay=${Math.round(l.start * 1000)}:all=1[lya${k}]`);
+      extraAudio.push(`[lya${k}]`);
+    }
+  });
+
   tl.overlays.forEach((o, k) => {
     const asset = inp.assets[o.assetId];
     if (!asset || !asset.meta.width || !asset.meta.height) return;
@@ -125,13 +152,10 @@ export function buildRenderArgs(tl: Timeline, st: RenderSettings, inp: RenderInp
     if (end <= start) return;
     args.push('-loop', '1', '-t', f(total), '-i', asset.file);
     const li = inputIndex++;
-    const lw = Math.max(2, even(o.width * W));
-    const lh = Math.max(2, even((lw * asset.meta.height) / asset.meta.width));
-    const x = Math.round(o.x * W - lw / 2);
-    const y = Math.round(o.y * H - lh / 2);
-    filters.push(`[${li}:v]format=rgba,scale=${lw}:${lh}:flags=lanczos,colorchannelmixer=aa=${f(o.opacity)}[ov${k}]`);
-    filters.push(`[${vLabel}][ov${k}]overlay=x=${x}:y=${y}:enable='between(t,${f(start)},${f(end)})':format=auto[vo${k}]`);
-    vLabel = `vo${k}`;
+    const base = overlayBase(o);
+    const sm = maxScale(base, o.keyframes);
+    const pre = `[${li}:v]format=rgba,scale=${Math.max(2, even(o.width * W * sm))}:-2:flags=lanczos`;
+    vLabel = placeTransformed(filters, vLabel, pre, base, o.keyframes, start, end, sm, `ov${k}`);
   });
 
   if (inp.assFile) {
@@ -154,7 +178,23 @@ export function buildRenderArgs(tl: Timeline, st: RenderSettings, inp: RenderInp
     if (m.fadeIn > 0) chain += `,afade=t=in:st=0:d=${f(m.fadeIn)}`;
     if (m.fadeOut > 0) chain += `,afade=t=out:st=${f(Math.max(0, total - m.fadeOut))}:d=${f(m.fadeOut)}`;
     filters.push(`${chain}[mus]`);
-    filters.push(`[acat][mus]amix=inputs=2:duration=first:normalize=0[amix]`);
+    extraAudio.unshift('[mus]');
+  }
+  // Faixas de áudio (narração, efeitos): fades lineares iguais aos da prévia.
+  (tl.audioClips ?? []).forEach((a, k) => {
+    const asset = inp.assets[a.assetId];
+    const len = Math.min(layerDuration(a), total - a.start);
+    if (!asset || len <= 0.04 || a.volume <= 0) return;
+    args.push('-ss', f(a.in), '-t', f(len), '-i', asset.file);
+    const ai = inputIndex++;
+    let chain = `[${ai}:a:0]asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo${a.denoise ? ',' + denoiseFilter(a.denoise) : ''},volume=${f(a.volume)}`;
+    if (a.fadeIn > 0) chain += `,afade=t=in:st=0:d=${f(Math.min(a.fadeIn, len))}`;
+    if (a.fadeOut > 0) chain += `,afade=t=out:st=${f(Math.max(0, len - a.fadeOut))}:d=${f(Math.min(a.fadeOut, len))}`;
+    filters.push(`${chain},adelay=${Math.round(a.start * 1000)}:all=1[aux${k}]`);
+    extraAudio.push(`[aux${k}]`);
+  });
+  if (extraAudio.length) {
+    filters.push(`[acat]${extraAudio.join('')}amix=inputs=${extraAudio.length + 1}:duration=first:normalize=0[amix]`);
     aLabel = 'amix';
   }
   if (tl.audio.normalize) filters.push(`[${aLabel}]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[aout]`);
@@ -173,4 +213,31 @@ export function buildRenderArgs(tl: Timeline, st: RenderSettings, inp: RenderInp
   args.push('-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2');
   args.push('-t', f(total), '-movflags', '+faststart', inp.output);
   return { args, duration: total };
+}
+
+/**
+ * Aplica rotação, opacidade e escala (fixas ou por quadros-chave) e sobrepõe com o centro em (x, y).
+ * O conteúdo chega no tamanho da maior escala usada (sm), para nunca ampliar uma imagem já reduzida.
+ */
+function placeTransformed(filters: string[], under: string, pre: string, base: Transform, kfs: Keyframe[] | undefined, start: number, end: number, sm: number, id: string): string {
+  const k = sortKfs(kfs);
+  const first = k.length ? k[0] : base;
+  let chain = pre;
+  if (isAnimated(k, 'rotation') || Math.abs(first.rotation) > 0.01) {
+    // Margem transparente até a diagonal antes de girar: com ângulo animado o rotate recorta no retângulo original.
+    chain += `,pad=w='ceil(hypot(iw,ih)/2)*2':h='ceil(hypot(iw,ih)/2)*2':x='(ow-iw)/2':y='(oh-ih)/2':color=black@0`;
+    chain += `,rotate=a='(${kfExpr(base, k, 'rotation', start)})*PI/180':c=none`;
+  }
+  if (isAnimated(k, 'opacity')) {
+    chain += `,sendcmd=c='${opacityCommands(base, k, start, end, `colorchannelmixer@${id}`)}',colorchannelmixer@${id}=aa=${f(Math.min(1, Math.max(0, first.opacity)))}`;
+  } else if (first.opacity < 0.999) {
+    chain += `,colorchannelmixer=aa=${f(Math.max(0, first.opacity))}`;
+  }
+  if (isAnimated(k, 'scale')) chain += `,scale=w='max(2,trunc(iw*(${kfExpr(base, k, 'scale', start)})/${f(sm)}/2)*2)':h=-2:eval=frame`;
+  else if (Math.abs(first.scale - sm) > 1e-4) chain += `,scale=w='max(2,trunc(iw*${f(first.scale / sm)}/2)*2)':h=-2`;
+  filters.push(`${chain}[${id}]`);
+  const x = kfExpr(base, k, 'x', start);
+  const y = kfExpr(base, k, 'y', start);
+  filters.push(`[${under}][${id}]overlay=x='(${x})*W-w/2':y='(${y})*H-h/2':eval=frame:eof_action=pass:format=auto:enable='between(t,${f(start)},${f(end)})'[${id}o]`);
+  return `${id}o`;
 }

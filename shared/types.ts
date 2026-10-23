@@ -33,6 +33,61 @@ export interface VideoClip {
   zoom?: { from: number; to: number };
   /** Transição na entrada deste trecho (entre o trecho anterior e este). */
   transition?: { type: TransitionType; duration: number };
+  /** Redução de ruído do áudio (aplicada na exportação; amostra tratada disponível no painel). */
+  denoise?: DenoiseLevel;
+}
+
+export type DenoiseLevel = 'light' | 'strong';
+
+/** Propriedades animáveis. x/y = centro normalizado (0..1); scale multiplica o tamanho; rotation em graus (horário). */
+export interface Transform {
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
+  opacity: number;
+}
+
+/** Quadro-chave: valores no instante t (segundos desde o início do item). Entre quadros, interpolação linear ou suave. */
+export interface Keyframe extends Transform {
+  t: number;
+  ease?: 'linear' | 'smooth';
+}
+
+/** Vídeo ou imagem numa faixa livre acima da principal (picture-in-picture, B-roll, elementos animados). */
+export interface LayerClip extends Transform {
+  id: string;
+  assetId: string;
+  /** 1 = logo acima da faixa principal; maior = mais acima. */
+  track: number;
+  /** Início na timeline (s). */
+  start: number;
+  /** Trecho do arquivo original (imagens: 0..duração desejada). */
+  in: number;
+  out: number;
+  /** 'free' = largura relativa (picture-in-picture); 'cover' = preenche o quadro (B-roll). */
+  mode: 'free' | 'cover';
+  /** Largura relativa à largura do quadro, com scale = 1 (modo free). */
+  width: number;
+  /** 0..1 (0 = mudo). */
+  volume: number;
+  denoise?: DenoiseLevel;
+  keyframes?: Keyframe[];
+}
+
+/** Áudio numa faixa própria (narração, efeito sonoro, segunda trilha). */
+export interface AudioClip {
+  id: string;
+  assetId: string;
+  track: number;
+  start: number;
+  in: number;
+  out: number;
+  /** 0..1 */
+  volume: number;
+  fadeIn: number;
+  fadeOut: number;
+  denoise?: DenoiseLevel;
 }
 
 export type TransitionType = 'fade' | 'flash' | 'zoom';
@@ -90,6 +145,8 @@ export interface OverlayClip {
   /** Largura relativa à largura do quadro (0..1). */
   width: number;
   opacity: number;
+  rotation?: number;
+  keyframes?: Keyframe[];
 }
 
 /** Palavra ancorada no tempo do arquivo original — sobrevive a cortes e reordenações. */
@@ -147,6 +204,8 @@ export interface Timeline {
   };
   texts?: TextClip[];
   music?: MusicTrack | null;
+  layers?: LayerClip[];
+  audioClips?: AudioClip[];
 }
 
 export interface Brand {

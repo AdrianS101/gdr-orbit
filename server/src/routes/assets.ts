@@ -14,6 +14,8 @@ import { readFontNames } from '../lib/fonts.ts';
 import { enqueue } from '../jobs/queue.ts';
 import { TRANSCRIBE_MODELS } from '../jobs/transcribe.ts';
 import { uid } from '../../../shared/timeline.ts';
+import { denoiseFilter } from '../../../shared/keyframes.ts';
+import { runCapture } from '../lib/ffmpeg.ts';
 
 const EXT_KIND: Record<string, string> = {
   '.mp4': 'video', '.mov': 'video', '.mkv': 'video', '.webm': 'video', '.avi': 'video', '.m4v': 'video', '.mts': 'video',
@@ -184,6 +186,21 @@ export async function assetRoutes(app: FastifyInstance) {
     const f = map[kind];
     if (!f) throw notFound('Mídia');
     return sendFile(req, reply, f, { cache: kind !== 'original', downloadName: (req.query as any).download ? r.name : undefined });
+  });
+
+  // Amostra de até 15 s com a MESMA cadeia de redução de ruído da exportação (a prévia comum toca o original).
+  app.get('/api/assets/:id/denoise-sample', async (req, reply) => {
+    const r = fileOf((req.params as any).id);
+    const q = req.query as { from?: string; level?: string };
+    const level = q.level === 'strong' ? 'strong' : q.level === 'light' ? 'light' : null;
+    const from = Math.max(0, Number(q.from) || 0);
+    const chain = ['aresample=48000', denoiseFilter(level ?? undefined)].filter(Boolean).join(',');
+    try {
+      const buf = await runCapture(config.ffmpeg, ['-v', 'error', '-ss', String(from), '-t', '15', '-i', assetPath(r.brand_id, r.id, 'original', r.ext), '-vn', '-af', chain, '-ac', '2', '-b:a', '160k', '-f', 'mp3', 'pipe:1']);
+      return reply.type('audio/mpeg').header('cache-control', 'no-store').send(buf);
+    } catch (e) {
+      throw new AppError(500, 'Não foi possível gerar a amostra de áudio.', `Verifique se o arquivo tem áudio. Detalhe: ${(e as Error).message}`);
+    }
   });
 
   // ---- transcrição ----

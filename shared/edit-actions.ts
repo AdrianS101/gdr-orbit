@@ -1,9 +1,10 @@
 // Vocabulário de edição: cada ação vira uma alteração revisável e desfazível na timeline.
 // Usado pelo chat com IA (a IA só escolhe ações desta lista) e pelas ações rápidas (sem IA).
-import type { Asset, CaptionWord, FormatPreset, TextAnim, TextClip, TextStyleKind, Timeline, TransitionType } from './types.ts';
+import type { Asset, CaptionWord, DenoiseLevel, FormatPreset, TextAnim, TextClip, TextStyleKind, Timeline, TransitionType } from './types.ts';
 import { clamp, defaultCaptionY, layoutClips, makeFormat, rippleDelete, splitAt, timelineDuration, uid } from './timeline.ts';
 import { buildCues } from './captions.ts';
 import { colorFromPreset, COLOR_PRESETS, removePauses } from './effects.ts';
+import { DENOISE_LABEL, newLayer } from './keyframes.ts';
 
 export type EditAction =
   | { type: 'remove_pauses'; minGap?: number }
@@ -18,7 +19,10 @@ export type EditAction =
   | { type: 'dynamic_zoom' }
   | { type: 'speed'; start: number; end: number; speed: number }
   | { type: 'music'; assetId: string; volume?: number; ducking?: boolean }
-  | { type: 'format'; preset: Exclude<FormatPreset, 'custom'> };
+  | { type: 'format'; preset: Exclude<FormatPreset, 'custom'> }
+  | { type: 'denoise'; level?: DenoiseLevel }
+  | { type: 'pip'; assetId: string; start: number; duration?: number; position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'center'; anim?: 'fade' | 'pop' | 'slide' | 'none' }
+  | { type: 'broll'; assetId: string; start: number; duration?: number };
 
 export interface ActionContext {
   transcripts: Record<string, CaptionWord[]>;
@@ -48,6 +52,9 @@ export function describeAction(a: EditAction, ctx?: ActionContext): string {
     case 'speed': return `Velocidade ${a.speed}× de ${t(a.start)} a ${t(a.end)}`;
     case 'music': return `Música "${ctx?.assets[a.assetId]?.name ?? a.assetId}" com volume reduzido na fala`;
     case 'format': return `Formato ${a.preset}`;
+    case 'denoise': return `Reduzir ruído do áudio (${DENOISE_LABEL[a.level ?? 'light'].split(' (')[0].toLowerCase()})`;
+    case 'pip': return `Sobrepor "${ctx?.assets[a.assetId]?.name ?? a.assetId}" em janela em ${t(a.start)}`;
+    case 'broll': return `B-roll "${ctx?.assets[a.assetId]?.name ?? a.assetId}" em ${t(a.start)}`;
   }
 }
 
@@ -163,6 +170,38 @@ export function applyAction(tl: Timeline, a: EditAction, ctx: ActionContext): Ac
       const format = makeFormat(a.preset, undefined, tl.format.fps);
       return { timeline: { ...tl, format, captions: { ...tl.captions, style: { ...tl.captions.style, posY: defaultCaptionY(format) } } }, label };
     }
+    case 'denoise': {
+      if (!tl.clips.length) throw new Error('A timeline está vazia.');
+      const level = a.level === 'strong' ? 'strong' : 'light';
+      return { timeline: { ...tl, clips: tl.clips.map((c) => ({ ...c, denoise: level })) }, label };
+    }
+    case 'pip':
+    case 'broll': {
+      const asset = ctx.assets[a.assetId];
+      if (!asset || (asset.kind !== 'video' && asset.kind !== 'image')) throw new Error('Vídeo ou imagem não encontrado na biblioteca da marca.');
+      const start = clamp(Number(a.start) || 0, 0, Math.max(0, total - 0.3));
+      const want = a.duration ?? (asset.kind === 'video' ? asset.meta.duration ?? 4 : 3);
+      const dur = Math.max(0.3, Math.min(want, asset.kind === 'video' ? asset.meta.duration ?? want : want, total - start));
+      const used = (tl.layers ?? []).filter((l) => l.start < start + dur && l.start + (l.out - l.in) > start).map((l) => l.track);
+      let track = 1;
+      while (used.includes(track)) track++;
+      const l = newLayer(asset.id, asset.kind === 'video' ? 'video' : 'image', dur, start, a.type === 'broll' ? 'cover' : 'free', track);
+      if (a.type === 'broll') l.volume = 0;
+      else {
+        const pos = a.position ?? 'top-right';
+        l.width = 0.42;
+        l.x = pos === 'center' ? 0.5 : pos.endsWith('right') ? 0.72 : 0.28;
+        l.y = pos === 'center' ? 0.5 : pos.startsWith('top') ? 0.3 : 0.68;
+        const anim = a.anim ?? 'pop';
+        // Entrada animada com quadros-chave (editáveis depois)
+        const end = Math.min(0.35, dur / 3);
+        const from = { x: l.x, y: l.y, scale: 1, rotation: 0, opacity: 1 };
+        if (anim === 'fade') l.keyframes = [{ t: 0, ...from, opacity: 0 }, { t: end, ...from, ease: 'smooth' }];
+        else if (anim === 'pop') l.keyframes = [{ t: 0, ...from, scale: 0.6, opacity: 0 }, { t: end, ...from, ease: 'smooth' }];
+        else if (anim === 'slide') l.keyframes = [{ t: 0, ...from, x: l.x > 0.5 ? 1.3 : -0.3 }, { t: end, ...from, ease: 'smooth' }];
+      }
+      return { timeline: { ...tl, layers: [...(tl.layers ?? []), l] }, label };
+    }
   }
   throw new Error('Ação desconhecida.');
 }
@@ -198,4 +237,7 @@ export const ACTION_CATALOG = `Ações disponíveis (use somente estas; tempos e
 - dynamic_zoom {} — zoom suave alternado em todos os trechos (ritmo).
 - speed {start, end, speed: 0.25-4}.
 - music {assetId, volume?: 0-1, ducking?: bool} — trilha de fundo da biblioteca, abaixa na fala.
-- format {preset: "9:16"|"16:9"|"1:1"|"4:5"}.`;
+- format {preset: "9:16"|"16:9"|"1:1"|"4:5"}.
+- denoise {level?: "light"|"strong"} — reduz chiado/ruído de fundo da fala (light para ruído leve).
+- pip {assetId, start, duration?, position?: "top-right"|"top-left"|"bottom-right"|"bottom-left"|"center", anim?: "fade"|"pop"|"slide"|"none"} — vídeo/imagem da biblioteca em janela sobre o vídeo, com entrada animada.
+- broll {assetId, start, duration?} — vídeo/imagem cobrindo a tela enquanto a fala principal continua (ilustra o que é dito).`;

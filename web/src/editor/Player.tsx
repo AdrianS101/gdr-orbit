@@ -9,7 +9,8 @@ import { media } from '../lib/api.ts';
 import { buildAss } from '../../../shared/ass.ts';
 import { clipFx, colorSvg, fadeAt, isNeutral, musicGainAt, speechIntervals, zoomAt } from '../../../shared/effects.ts';
 import { clipAt, layoutClips, sourceTimeAt, timelineDuration, SAFE_AREAS_VERTICAL, type PlacedClip } from '../../../shared/timeline.ts';
-import type { Timeline, VideoClip } from '../../../shared/types.ts';
+import { audioClipGain, layerDuration, overlayBase, setAt, stackedLayers, transformAt } from '../../../shared/keyframes.ts';
+import type { Asset, AudioClip, LayerClip, Timeline, VideoClip } from '../../../shared/types.ts';
 
 const END_EPS = 1 / 45;
 
@@ -288,16 +289,20 @@ export function Player({ showSafe }: { showSafe: boolean }) {
     j.manualRender({ mediaTime: time, width: W, height: H, expectedDisplayTime: performance.now() }).catch(() => {});
   }, [time, W, H]);
 
-  // ---- arrastar logo/imagem na prévia ----
-  const drag = useRef<{ id: string; dx: number; dy: number; before: Timeline } | null>(null);
-  const onOverlayDown = (e: React.PointerEvent, id: string) => {
+  // ---- arrastar logo/imagem/faixa na prévia (com quadros-chave, grava no instante do cursor) ----
+  const drag = useRef<{ id: string; kind: 'overlay' | 'layer'; dx: number; dy: number; before: Timeline } | null>(null);
+  const onOverlayDown = (e: React.PointerEvent, id: string, kind: 'overlay' | 'layer' = 'overlay') => {
     e.preventDefault();
     e.stopPropagation();
     const st = useEditor.getState();
-    st.select({ kind: 'overlay', id });
-    const o = st.timeline!.overlays.find((x) => x.id === id)!;
+    st.select({ kind, id });
+    const tl = st.timeline!;
+    const cur =
+      kind === 'overlay'
+        ? (() => { const o = tl.overlays.find((x) => x.id === id)!; return transformAt(overlayBase(o), o.keyframes, st.time - o.start); })()
+        : (() => { const l = (tl.layers ?? []).find((x) => x.id === id)!; return transformAt(l, l.keyframes, st.time - l.start); })();
     const r = stageRef.current!.getBoundingClientRect();
-    drag.current = { id, dx: (e.clientX - r.left) / r.width - o.x, dy: (e.clientY - r.top) / r.height - o.y, before: st.timeline! };
+    drag.current = { id, kind, dx: (e.clientX - r.left) / r.width - cur.x, dy: (e.clientY - r.top) / r.height - cur.y, before: tl };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onOverlayMove = (e: React.PointerEvent) => {
@@ -307,7 +312,9 @@ export function Player({ showSafe }: { showSafe: boolean }) {
     const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width - d.dx));
     const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height - d.dy));
     const st = useEditor.getState();
-    st.preview({ ...st.timeline!, overlays: st.timeline!.overlays.map((o) => (o.id === d.id ? { ...o, x, y } : o)) });
+    const tl = d.before;
+    if (d.kind === 'overlay') st.preview({ ...tl, overlays: tl.overlays.map((o) => (o.id === d.id ? setAt(o, overlayBase(o), o.start, st.time, { x, y }) : o)) });
+    else st.preview({ ...tl, layers: (tl.layers ?? []).map((l) => (l.id === d.id ? setAt(l, l, l.start, st.time, { x, y }) : l)) });
   };
   const onOverlayUp = () => {
     if (drag.current) useEditor.getState().endGesture(drag.current.before, 'Mover elemento');
@@ -335,12 +342,26 @@ export function Player({ showSafe }: { showSafe: boolean }) {
         </svg>
         {fade && <div className="stage-layer" style={{ background: fade.color, opacity: fade.alpha, pointerEvents: 'none' }} />}
         {timeline.music && <audio ref={musicRef} src={media.original(timeline.music.assetId)} preload="auto" loop />}
+        {stackedLayers(timeline).map((l) => (
+          <LayerView
+            key={l.id}
+            layer={l}
+            asset={assets[l.assetId]}
+            time={time}
+            total={total}
+            playing={playing}
+            selected={selection?.kind === 'layer' && selection.id === l.id}
+            onDown={(e) => onOverlayDown(e, l.id, 'layer')}
+            onMove={onOverlayMove}
+            onUp={onOverlayUp}
+          />
+        ))}
+        {(timeline.audioClips ?? []).map((a) => <AudioClipPlayer key={a.id} clip={a} time={time} total={total} playing={playing} />)}
         {timeline.overlays.map((o) => {
           const a = assets[o.assetId];
           if (!a?.meta.width || !a.meta.height) return null;
           const visible = time >= o.start && time < o.end;
-          const lw = o.width;
-          const lhFrac = ((o.width * W * a.meta.height) / a.meta.width) / H;
+          const tr = transformAt(overlayBase(o), o.keyframes, time - o.start);
           const sel = selection?.kind === 'overlay' && selection.id === o.id;
           return (
             <img
@@ -349,7 +370,7 @@ export function Player({ showSafe }: { showSafe: boolean }) {
               alt=""
               draggable={false}
               className={`stage-overlay ${sel ? 'sel' : ''}`}
-              style={{ left: `${(o.x - lw / 2) * 100}%`, top: `${(o.y - lhFrac / 2) * 100}%`, width: `${lw * 100}%`, opacity: visible ? o.opacity : sel ? 0.25 : 0 }}
+              style={{ left: `${tr.x * 100}%`, top: `${tr.y * 100}%`, width: `${o.width * tr.scale * 100}%`, transform: `translate(-50%, -50%) rotate(${tr.rotation}deg)`, opacity: visible ? Math.max(0, Math.min(1, tr.opacity)) : sel ? 0.25 : 0 }}
               onPointerDown={(e) => onOverlayDown(e, o.id)}
               onPointerMove={onOverlayMove}
               onPointerUp={onOverlayUp}
@@ -371,4 +392,63 @@ export function Player({ showSafe }: { showSafe: boolean }) {
       {captionError && <div className="stage-warn">Prévia das legendas indisponível neste navegador ({captionError}). A exportação não é afetada.</div>}
     </div>
   );
+}
+
+/** Mantém um elemento de mídia no instante certo do arquivo (tolerância maior durante a reprodução). */
+function syncMedia(el: HTMLMediaElement | null, visible: boolean, target: number, playing: boolean) {
+  if (!el) return;
+  if (!visible) {
+    if (!el.paused) el.pause();
+    return;
+  }
+  if (playing) {
+    if (el.paused || Math.abs(el.currentTime - target) > 0.25) el.currentTime = target;
+    if (el.paused) el.play().catch(() => {});
+  } else {
+    if (!el.paused) el.pause();
+    if (Math.abs(el.currentTime - target) > 0.03) el.currentTime = target;
+  }
+}
+
+/** Faixa livre: mesma geometria do FFmpeg (centro em x/y, largura × escala, rotação no centro, opacidade). */
+function LayerView({ layer: l, asset, time, total, playing, selected, onDown, onMove, onUp }: { layer: LayerClip; asset?: Asset; time: number; total: number; playing: boolean; selected: boolean; onDown: (e: React.PointerEvent) => void; onMove: (e: React.PointerEvent) => void; onUp: () => void }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  const isVideo = asset?.kind === 'video';
+  const lt = time - l.start;
+  const visible = lt >= 0 && lt < Math.min(layerDuration(l), total - l.start);
+  useEffect(() => {
+    const v = ref.current;
+    if (!v) return;
+    v.volume = Math.min(1, Math.max(0, l.volume));
+    v.muted = l.volume <= 0;
+    syncMedia(v, visible, l.in + Math.max(0, lt), playing);
+  }, [visible, lt, playing, l.in, l.volume]);
+  if (!asset) return null;
+  const tr = transformAt(l, l.keyframes, Math.max(0, lt));
+  const cover = l.mode === 'cover';
+  const style: React.CSSProperties = {
+    left: `${tr.x * 100}%`,
+    top: `${tr.y * 100}%`,
+    width: cover ? '100%' : `${l.width * tr.scale * 100}%`,
+    height: cover ? '100%' : 'auto',
+    aspectRatio: cover ? undefined : `${asset.meta.width ?? 16} / ${asset.meta.height ?? 9}`,
+    objectFit: 'cover',
+    transform: `translate(-50%, -50%)${cover ? ` scale(${tr.scale})` : ''} rotate(${tr.rotation}deg)`,
+    opacity: visible ? Math.max(0, Math.min(1, tr.opacity)) : selected ? 0.2 : 0,
+  };
+  const common = { className: `stage-overlay ${selected ? 'sel' : ''}`, style, draggable: false, onPointerDown: onDown, onPointerMove: onMove, onPointerUp: onUp, onClick: (e: React.MouseEvent) => e.stopPropagation() };
+  return isVideo ? <video ref={ref} src={media.proxy(l.assetId)} playsInline preload="auto" {...common} /> : <img src={media.original(l.assetId)} alt="" {...common} />;
+}
+
+function AudioClipPlayer({ clip, time, total, playing }: { clip: AudioClip; time: number; total: number; playing: boolean }) {
+  const ref = useRef<HTMLAudioElement>(null);
+  const lt = time - clip.start;
+  const visible = lt >= 0 && lt < Math.min(layerDuration(clip), total - clip.start);
+  useEffect(() => {
+    const a = ref.current;
+    if (!a) return;
+    a.volume = Math.min(1, audioClipGain(clip, time));
+    syncMedia(a, visible, clip.in + Math.max(0, lt), playing);
+  }, [visible, lt, playing, clip, time]);
+  return <audio ref={ref} src={media.original(clip.assetId)} preload="auto" />;
 }

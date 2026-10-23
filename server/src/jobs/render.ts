@@ -15,7 +15,7 @@ export async function renderHandler(ctx: JobContext) {
   const project = db.prepare('SELECT id, brand_id FROM projects WHERE id = ?').get(projectId) as any;
   if (!project) throw new Error('O projeto foi excluído antes da exportação.');
 
-  const ids = new Set([...timeline.clips.map((c) => c.assetId), ...timeline.overlays.map((o) => o.assetId), ...(timeline.music ? [timeline.music.assetId] : [])]);
+  const ids = new Set([...timeline.clips.map((c) => c.assetId), ...timeline.overlays.map((o) => o.assetId), ...(timeline.music ? [timeline.music.assetId] : []), ...(timeline.layers ?? []).map((l) => l.assetId), ...(timeline.audioClips ?? []).map((a) => a.assetId)]);
   const assets: Record<string, { file: string; meta: any }> = {};
   for (const id of ids) {
     const a = db.prepare('SELECT * FROM assets WHERE id = ? AND brand_id = ?').get(id, project.brand_id) as any;

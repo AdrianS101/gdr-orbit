@@ -1,10 +1,11 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Play, Pause, Scissors, Trash2, Copy, ZoomIn, ZoomOut, Maximize2, Captions, Image as ImageIcon, Film } from 'lucide-react';
+import { Play, Pause, Scissors, Trash2, Copy, ZoomIn, ZoomOut, Maximize2, Captions, Image as ImageIcon, Film, Layers, AudioLines } from 'lucide-react';
+import { layerDuration } from '../../../shared/keyframes.ts';
 import { useEditor } from './store.ts';
 import { media } from '../lib/api.ts';
 import { clipDuration, fmtTime, layoutClips, timelineDuration, trimClip, moveClip, MIN_CLIP } from '../../../shared/timeline.ts';
 import { mapCuesToTimeline } from '../../../shared/captions.ts';
-import type { Asset, Timeline, VideoClip } from '../../../shared/types.ts';
+import type { Asset, AudioClip, LayerClip, Timeline, VideoClip } from '../../../shared/types.ts';
 import { splitAtPlayhead, deleteSelection, duplicateSelection } from './actions.ts';
 
 const HEAD = 104;
@@ -192,6 +193,41 @@ export function TimelinePanel() {
     og.current = null;
   };
 
+  // ---- faixas livres (vídeo/imagem) e faixas de áudio: mover e aparar ----
+  const lg = useRef<{ list: 'layers' | 'audioClips'; kind: 'move' | 'in' | 'out'; id: string; x0: number; before: Timeline } | null>(null);
+  const onLayerDown = (e: React.PointerEvent, list: 'layers' | 'audioClips', id: string, kind: 'move' | 'in' | 'out') => {
+    e.stopPropagation();
+    const st = useEditor.getState();
+    st.setPlaying(false);
+    st.select({ kind: list === 'layers' ? 'layer' : 'audio', id });
+    lg.current = { list, kind, id, x0: e.clientX, before: st.timeline! };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onLayerMove = (e: React.PointerEvent) => {
+    const g = lg.current;
+    if (!g) return;
+    const dt = (e.clientX - g.x0) / zoom;
+    const items = (g.before[g.list] ?? []) as (LayerClip | AudioClip)[];
+    const moved = items.map((l) => {
+      if (l.id !== g.id) return l;
+      const a = assets[l.assetId];
+      const srcDur = a?.kind === 'image' ? Infinity : a?.meta.duration ?? l.out;
+      if (g.kind === 'move') return { ...l, start: Math.max(0, l.start + dt) };
+      if (g.kind === 'out') return { ...l, out: Math.min(srcDur, Math.max(l.in + MIN_CLIP, l.out + dt)) };
+      // aparar o início mantém o fim no lugar
+      const d = Math.max(-Math.min(l.start, a?.kind === 'image' ? l.start : l.in), Math.min(l.out - l.in - MIN_CLIP, dt));
+      return { ...l, start: l.start + d, in: a?.kind === 'image' ? l.in : l.in + d, out: a?.kind === 'image' ? l.out - d : l.out };
+    });
+    useEditor.getState().preview({ ...g.before, [g.list]: moved });
+  };
+  const onLayerUp = () => {
+    if (lg.current) useEditor.getState().endGesture(lg.current.before, 'Ajustar faixa');
+    lg.current = null;
+  };
+  const layerTracks = useMemo(() => Array.from(new Set((timeline.layers ?? []).map((l) => l.track))).sort((a, b) => b - a), [timeline.layers]);
+  const audioTracks = useMemo(() => Array.from(new Set((timeline.audioClips ?? []).map((l) => l.track))).sort((a, b) => a - b), [timeline.audioClips]);
+  const kfMarks = (start: number, kfs?: { t: number }[]) => (kfs ?? []).map((k, i) => <span key={i} className="kf-mark" style={{ left: k.t * zoom - 4 }} title={`Quadro-chave em ${fmtTime(start + k.t, true)}`} />);
+
   const ticks = useMemo(() => {
     const step = zoom > 120 ? 1 : zoom > 40 ? 2 : zoom > 15 ? 5 : zoom > 6 ? 10 : 30;
     const out = [];
@@ -283,11 +319,33 @@ export function TimelinePanel() {
                   <span className="handle l" onPointerDown={(e) => onOvDown(e, o.id, 'in')} />
                   <img src={media.original(o.assetId)} alt="" draggable={false} />
                   <span className="ellipsis">{assets[o.assetId]?.name ?? 'Imagem'}</span>
+                  {kfMarks(o.start, o.keyframes)}
                   <span className="handle r" onPointerDown={(e) => onOvDown(e, o.id, 'out')} />
                 </div>
               );
             })}
           </div>
+
+          {layerTracks.map((tr) => (
+            <div key={`v${tr}`} className="tl-track layer-track" onPointerDown={onRulerDown} onPointerMove={onRulerMove} onPointerUp={onRulerUp}>
+              <div className="tl-head">
+                <Layers size={14} /> Vídeo {tr + 1}
+              </div>
+              {(timeline.layers ?? []).filter((l) => l.track === tr).map((l) => {
+                const sel = selection?.kind === 'layer' && selection.id === l.id;
+                const a = assets[l.assetId];
+                return (
+                  <div key={l.id} className={`ov-block layer-block ${sel ? 'sel' : ''}`} style={{ left: HEAD + l.start * zoom, width: Math.max(6, layerDuration(l) * zoom) }} onPointerDown={(e) => onLayerDown(e, 'layers', l.id, 'move')} onPointerMove={onLayerMove} onPointerUp={onLayerUp}>
+                    <span className="handle l" onPointerDown={(e) => onLayerDown(e, 'layers', l.id, 'in')} />
+                    <img src={a?.kind === 'video' ? media.poster(l.assetId) : media.original(l.assetId)} alt="" draggable={false} />
+                    <span className="ellipsis">{l.mode === 'cover' ? 'B-roll · ' : ''}{a?.name ?? 'Arquivo'}</span>
+                    {kfMarks(l.start, l.keyframes)}
+                    <span className="handle r" onPointerDown={(e) => onLayerDown(e, 'layers', l.id, 'out')} />
+                  </div>
+                );
+              })}
+            </div>
+          ))}
 
           <div className="tl-track video-track" onPointerDown={onRulerDown} onPointerMove={onRulerMove} onPointerUp={onRulerUp}>
             <div className="tl-head">
@@ -319,6 +377,24 @@ export function TimelinePanel() {
             })}
             {dropIndex !== null && <div className="drop-mark" style={{ left: HEAD + (layoutClips(timeline.clips.filter((c) => c.id !== gesture.current?.id))[dropIndex]?.start ?? total) * zoom }} />}
           </div>
+
+          {audioTracks.map((tr) => (
+            <div key={`a${tr}`} className="tl-track audio-track" onPointerDown={onRulerDown} onPointerMove={onRulerMove} onPointerUp={onRulerUp}>
+              <div className="tl-head">
+                <AudioLines size={14} /> Áudio {tr}
+              </div>
+              {(timeline.audioClips ?? []).filter((a) => a.track === tr).map((a) => {
+                const sel = selection?.kind === 'audio' && selection.id === a.id;
+                return (
+                  <div key={a.id} className={`ov-block audio-block ${sel ? 'sel' : ''}`} style={{ left: HEAD + a.start * zoom, width: Math.max(6, layerDuration(a) * zoom) }} onPointerDown={(e) => onLayerDown(e, 'audioClips', a.id, 'move')} onPointerMove={onLayerMove} onPointerUp={onLayerUp}>
+                    <span className="handle l" onPointerDown={(e) => onLayerDown(e, 'audioClips', a.id, 'in')} />
+                    <span className="ellipsis">{assets[a.assetId]?.name ?? 'Áudio'}</span>
+                    <span className="handle r" onPointerDown={(e) => onLayerDown(e, 'audioClips', a.id, 'out')} />
+                  </div>
+                );
+              })}
+            </div>
+          ))}
 
           <Playhead zoom={zoom} />
         </div>

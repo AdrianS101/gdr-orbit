@@ -24,6 +24,8 @@ export function deleteSelection() {
   if (!timeline || !selection) return;
   if (selection.kind === 'clip') commit(removeClip(timeline, selection.id), 'Excluir trecho');
   else if (selection.kind === 'overlay') commit({ ...timeline, overlays: timeline.overlays.filter((o) => o.id !== selection.id) }, 'Excluir elemento');
+  else if (selection.kind === 'layer') commit({ ...timeline, layers: (timeline.layers ?? []).filter((o) => o.id !== selection.id) }, 'Excluir da faixa');
+  else if (selection.kind === 'audio') commit({ ...timeline, audioClips: (timeline.audioClips ?? []).filter((o) => o.id !== selection.id) }, 'Excluir áudio');
   else commit({ ...timeline, captions: { ...timeline.captions, cues: timeline.captions.cues.filter((c) => c.id !== selection.id) } }, 'Excluir legenda');
   select(null);
 }
@@ -43,6 +45,14 @@ export function duplicateSelection() {
     const copy = { ...o, id: uid('o_'), x: Math.min(0.95, o.x + 0.04), y: Math.min(0.95, o.y + 0.04) };
     commit({ ...timeline, overlays: [...timeline.overlays, copy] }, 'Duplicar elemento');
     select({ kind: 'overlay', id: copy.id });
+  } else if (selection.kind === 'layer' || selection.kind === 'audio') {
+    const key = selection.kind === 'layer' ? 'layers' : 'audioClips';
+    const list = (timeline[key] ?? []) as any[];
+    const o = list.find((x) => x.id === selection.id);
+    if (!o) return;
+    const copy = { ...o, id: uid(selection.kind === 'layer' ? 'l_' : 'a_'), start: o.start + (o.out - o.in) };
+    commit({ ...timeline, [key]: [...list, copy] }, 'Duplicar faixa');
+    select({ kind: selection.kind, id: copy.id });
   }
 }
 

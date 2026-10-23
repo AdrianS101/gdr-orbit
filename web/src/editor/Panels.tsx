@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Film, Stamp, ImagePlus, Trash2 } from 'lucide-react';
+import { Plus, Film, Stamp, ImagePlus, Trash2, PictureInPicture2, Clapperboard } from 'lucide-react';
 import { useEditor } from './store.ts';
 import { addImageOverlay, addVideo, deleteSelection, updateTimeline } from './actions.ts';
 import { media } from '../lib/api.ts';
@@ -7,6 +7,7 @@ import { useApp, onJob } from '../lib/store.ts';
 import { fmtDuration } from '../lib/format.ts';
 import { Field, Progress } from '../components/ui.tsx';
 import { UploadButton } from '../pages/Library.tsx';
+import { addLayer, AudioInspector, DenoiseField, LayerInspector, OverlayTransform } from './LayerPanels.tsx';
 import { FORMAT_PRESETS, makeFormat, defaultCaptionY, clipDuration, fmtTime } from '../../../shared/timeline.ts';
 import type { FitMode, FormatPreset, OverlayClip, VideoClip } from '../../../shared/types.ts';
 
@@ -19,7 +20,7 @@ export function MediaPanel() {
   return (
     <div className="col" style={{ gap: 12 }}>
       <div className="row">
-        <span className="muted small" style={{ flex: 1 }}>Vídeos da marca. Clique em + para colocar no fim da timeline.</span>
+        <span className="muted small" style={{ flex: 1 }}>Vídeos da marca. + coloca no fim da faixa principal; PiP e B-roll entram numa faixa acima, no cursor.</span>
         <UploadButton brandId={project.brandId} accept="video/*,image/*,.ttf,.otf" label="Enviar" onUploaded={() => useEditor.getState().refreshAssets()} />
       </div>
       <div className="media-grid">
@@ -38,6 +39,12 @@ export function MediaPanel() {
                 )}
               </div>
               <div className="small ellipsis" title={a.name}>{a.name}</div>
+              {ready && (
+                <div className="row" style={{ gap: 4 }}>
+                  <button className="btn ghost sm" title="Sobrepor em janela (picture-in-picture)" onClick={() => addLayer(a, 'free')}><PictureInPicture2 size={13} /> PiP</button>
+                  <button className="btn ghost sm" title="Cobrir a tela (B-roll), mantendo o áudio principal" onClick={() => addLayer(a, 'cover')}><Clapperboard size={13} /> B-roll</button>
+                </div>
+              )}
               {job && <Progress value={job.progress} indeterminate={job.status === 'queued'} />}
               {a.status === 'failed' && <span className="badge danger">Falhou ao preparar</span>}
             </div>
@@ -91,7 +98,7 @@ export function ElementsPanel() {
           ))}
         </div>
       </section>
-      <div className="alert info small">Títulos, lower thirds, motion graphics, transições e trilhas chegam na Etapa 2.</div>
+      <div className="alert info small">Para animar um elemento, selecione-o e use os quadros-chave no painel à direita. Títulos e lower thirds ficam na aba Texto.</div>
     </div>
   );
 }
@@ -162,6 +169,7 @@ function ClipInspector({ clip }: { clip: VideoClip }) {
       <Field label={`Volume: ${Math.round(clip.volume * 100)}%`}>
         <input type="range" min={0} max={2} step={0.05} value={clip.volume} onChange={(e) => set({ volume: Number(e.target.value) }, 'Volume')} />
       </Field>
+      {asset?.meta.hasAudio && <DenoiseField assetId={clip.assetId} from={clip.in} value={clip.denoise} onChange={(v) => set({ denoise: v }, 'Redução de ruído')} />}
       <Field label="Enquadramento">
         <select className="select sm" value={clip.fit} onChange={(e) => set({ fit: e.target.value as FitMode }, 'Enquadramento')}>
           <option value="cover">Preencher (corta as bordas)</option>
@@ -197,9 +205,6 @@ function OverlayInspector({ o }: { o: OverlayClip }) {
       <Field label={`Tamanho: ${Math.round(o.width * 100)}% da largura`}>
         <input type="range" min={0.03} max={1} step={0.005} value={o.width} onChange={(e) => set({ width: Number(e.target.value) }, 'Tamanho do elemento')} />
       </Field>
-      <Field label={`Opacidade: ${Math.round(o.opacity * 100)}%`}>
-        <input type="range" min={0.05} max={1} step={0.05} value={o.opacity} onChange={(e) => set({ opacity: Number(e.target.value) }, 'Opacidade')} />
-      </Field>
       <Field label="Posições rápidas">
         <div className="pos-grid">
           {[0.15, 0.5, 0.85].flatMap((y) =>
@@ -219,6 +224,7 @@ function OverlayInspector({ o }: { o: OverlayClip }) {
           <input className="input sm" type="number" step={0.1} value={num(o.end, 2)} onChange={(e) => set({ end: Math.max(o.start + 0.1, Number(e.target.value)) }, 'Tempo do elemento')} />
         </Field>
       </div>
+      <OverlayTransform o={o} />
       <button className="btn ghost danger sm" onClick={deleteSelection}>
         <Trash2 size={14} /> Remover elemento
       </button>
@@ -232,10 +238,14 @@ export function Inspector() {
   if (!selection || selection.kind === 'cue') return null;
   const clip = selection.kind === 'clip' ? timeline.clips.find((c) => c.id === selection.id) : null;
   const ov = selection.kind === 'overlay' ? timeline.overlays.find((o) => o.id === selection.id) : null;
-  if (!clip && !ov) return null;
+  const layer = selection.kind === 'layer' ? (timeline.layers ?? []).find((l) => l.id === selection.id) : null;
+  const aud = selection.kind === 'audio' ? (timeline.audioClips ?? []).find((l) => l.id === selection.id) : null;
+  if (!clip && !ov && !layer && !aud) return null;
   return (
     <aside className="inspector">
-      <div className="label" style={{ marginBottom: 10 }}>{clip ? 'Trecho de vídeo' : 'Elemento'}</div>
+      <div className="label" style={{ marginBottom: 10 }}>{clip ? 'Trecho de vídeo' : layer ? 'Faixa de vídeo' : aud ? 'Faixa de áudio' : 'Elemento'}</div>
+      {layer && <LayerInspector l={layer} />}
+      {aud && <AudioInspector a={aud} />}
       {clip && <ClipInspector clip={clip} />}
       {ov && <OverlayInspector o={ov} />}
     </aside>
