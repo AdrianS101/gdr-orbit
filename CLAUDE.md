@@ -138,6 +138,7 @@ Fonte da interface: Inter (variável, empacotada). Ícones: lucide-react.
 - TikTok: fluxo assistido (baixar vídeo, copiar texto, abrir TikTok, colar link para registrar). Postagem direta exige app aprovado pelo TikTok.
 - web/src/pages/Content.tsx (calendário mensal + lista + filtros), SocialPreview.tsx (prévia Instagram feed/Reels, Facebook, TikTok), SocialAccounts.tsx, MetaSettings.tsx.
 - Validado: fluxo de status e TikTok assistido via API com dados de teste. App Meta "GDR Orbit" (ID 2375388399959584, modo desenvolvimento) criado e perfis conectados pelo usuário; publicação real ainda não testada.
+- Capa do Reels (posts.cover): automática, quadro do vídeo (Instagram `thumb_offset`; Facebook recebe o quadro extraído pelo FFmpeg como `thumb`) ou imagem da Biblioteca (Instagram `cover_url` hospedada como foto não publicada; Facebook `thumb`). Prévia 9:16 e recorte 3:4 da grade. Prévia do post com botão de som (antes o vídeo ficava sempre mudo).
 - Compositor aceita anexar arquivo do computador (vai para a Biblioteca da marca e é selecionado ao ficar pronto) além de vídeos exportados/arquivos da Biblioteca.
 - Google Drive (server/src/drive.ts): OAuth somente leitura com cliente Google do usuário, pastas vinculadas por marca, verificação a cada 15 min (conta novos), importação manual ou automática por pasta, dedupe por id do Drive (assets.source_ref) e SHA-256. Nunca publica. Pendente: credenciais Google do usuário.
 - Biblioteca mostra uso de cada arquivo (projetos/posts) e botão "Editar" cria projeto a partir do vídeo.
@@ -163,7 +164,8 @@ Fonte da interface: Inter (variável, empacotada). Ícones: lucide-react.
 - Automações comentário→DM (shared/automation.ts + inbox-routes.ts): palavras-chave (ignora acento/maiúscula/emoji), publicações escolhidas ou todas, resposta pública alternada, DM com {nome} e link, pergunta de continuidade com respostas por palavra; uma DM por pessoa por automação; histórico (automation_runs) e teste simulado que não envia nada.
 - IA nas respostas: só usa perfil e base de conhecimento da marca; needsHuman manda a conversa para "Precisa de você". Modo por perfil: manual (só sugere) ou automático (envia o que souber). Pausa de automação por contato.
 - Permissões adicionadas no app Meta: instagram_manage_messages, instagram_manage_comments, pages_read_user_content, pages_manage_engagement e pages_messaging (caso de uso Messenger). Usuário precisa reconectar e ativar "Permitir acesso a mensagens" no Instagram.
-- Pendente: validação com contas reais após reconexão; webhooks quando estiver na nuvem.
+- Fluxo com botão (estilo ManyChat): 1ª mensagem (resposta privada) com botão postback ("Quero o link") → clique → [opcional: só para quem segue, via `is_user_follow_business` da API de perfil do Instagram; se não segue, manda "tem que estar seguindo" com botão "Estou seguindo" e verifica de novo, até 5 vezes; sem confirmação nunca entrega] → entrega com o link como botão web_url. Estado em `automation_flows`, ligado pelo `recipient_id` que a Meta devolve na resposta privada. Sem webhook (roda local), o clique é reconhecido pela mensagem com o título do botão que aparece na conversa. Se a Meta recusar botão na resposta privada, envia em texto pedindo para responder com o título (mesmo fluxo). Prévia "como no Direct" no editor.
+- Pendente: validação com contas reais após reconexão (inclusive se o toque no botão aparece na API de conversas sem webhook); webhooks quando estiver na nuvem.
 
 ## Dependências e limitações conhecidas
 

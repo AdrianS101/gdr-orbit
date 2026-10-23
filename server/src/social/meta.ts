@@ -89,10 +89,11 @@ export interface PublishFile {
   kind: 'video' | 'image';
 }
 
-async function uploadForm(url: string, fields: Record<string, string>, file?: string) {
+async function uploadForm(url: string, fields: Record<string, string>, file?: string, extra?: Record<string, string>) {
   const fd = new FormData();
   for (const [k, v] of Object.entries(fields)) fd.append(k, v);
   if (file) fd.append('source', new Blob([fs.readFileSync(file)]), path.basename(file));
+  for (const [k, ef] of Object.entries(extra ?? {})) fd.append(k, new Blob([fs.readFileSync(ef)]), path.basename(ef));
   return call(url, { method: 'POST', body: fd });
 }
 
@@ -124,12 +125,17 @@ async function waitContainer(id: string, token: string, onTick?: (msg: string) =
   throw new MetaError('O Instagram demorou demais para processar a mídia.', 'Tente publicar novamente em alguns minutos.');
 }
 
-export async function publishInstagram(a: { igId: string; pageId: string; token: string }, type: 'video' | 'image' | 'carousel', files: PublishFile[], caption: string, existingContainer: string | null, onStep: (msg: string, containerId?: string) => void) {
+export async function publishInstagram(a: { igId: string; pageId: string; token: string }, type: 'video' | 'image' | 'carousel', files: PublishFile[], caption: string, existingContainer: string | null, onStep: (msg: string, containerId?: string) => void, cover?: { offsetMs?: number; imageFile?: string } | null) {
   let container = existingContainer;
   if (!container) {
     if (type === 'video') {
       onStep('Enviando vídeo ao Instagram');
-      container = await resumableVideo(a.igId, a.token, files[0].file, { media_type: 'REELS', caption, share_to_feed: 'true' });
+      const coverParams: Record<string, string> = {};
+      if (cover?.imageFile) {
+        onStep('Preparando a capa');
+        coverParams.cover_url = await hostImage(a.pageId, a.token, cover.imageFile);
+      } else if (cover?.offsetMs !== undefined) coverParams.thumb_offset = String(cover.offsetMs);
+      container = await resumableVideo(a.igId, a.token, files[0].file, { media_type: 'REELS', caption, share_to_feed: 'true', ...coverParams });
     } else if (type === 'image') {
       onStep('Enviando imagem');
       const url = await hostImage(a.pageId, a.token, files[0].file);
@@ -158,10 +164,10 @@ export async function publishInstagram(a: { igId: string; pageId: string; token:
   return { externalId: pub.id as string, permalink: (info.permalink as string) ?? null };
 }
 
-export async function publishFacebook(a: { pageId: string; token: string }, type: 'video' | 'image' | 'carousel', files: PublishFile[], caption: string, onStep: (msg: string) => void) {
+export async function publishFacebook(a: { pageId: string; token: string }, type: 'video' | 'image' | 'carousel', files: PublishFile[], caption: string, onStep: (msg: string) => void, thumbFile?: string) {
   if (type === 'video') {
     onStep('Enviando vídeo à Página');
-    const v = await uploadForm(`https://graph-video.facebook.com/${graphVersion()}/${a.pageId}/videos`, { description: caption, access_token: a.token }, files[0].file);
+    const v = await uploadForm(`https://graph-video.facebook.com/${graphVersion()}/${a.pageId}/videos`, { description: caption, access_token: a.token }, files[0].file, thumbFile ? { thumb: thumbFile } : undefined);
     const info = await call(`${G()}/${v.id}?${q({ fields: 'permalink_url', access_token: a.token })}`).catch(() => ({}));
     return { externalId: v.id as string, permalink: info.permalink_url ? `https://www.facebook.com${info.permalink_url}` : null };
   }

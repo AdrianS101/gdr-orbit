@@ -1,6 +1,6 @@
 // Prévia de como o post aparece em cada rede (aproximação visual do app, antes de publicar).
 import { useState } from 'react';
-import { Heart, MessageCircle, Send, Bookmark, ChevronLeft, ChevronRight, ThumbsUp, Share2, Music2 } from 'lucide-react';
+import { Heart, MessageCircle, Send, Bookmark, ChevronLeft, ChevronRight, ThumbsUp, Share2, Music2, Volume2, VolumeX } from 'lucide-react';
 
 export interface PreviewMedia {
   url: string;
@@ -9,9 +9,14 @@ export interface PreviewMedia {
 
 function Media({ items, aspect, idx, setIdx }: { items: PreviewMedia[]; aspect: string; idx: number; setIdx: (n: number) => void }) {
   const m = items[idx];
+  // Começa sem som (o navegador bloqueia reprodução automática com áudio); um toque liga o som.
+  const [muted, setMuted] = useState(true);
   return (
     <div style={{ position: 'relative', aspectRatio: aspect, background: '#000', overflow: 'hidden' }}>
-      {m ? m.kind === 'video' ? <video src={m.url} muted loop autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <img src={m.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ color: '#888', display: 'grid', placeItems: 'center', height: '100%', fontSize: 12 }}>Escolha a mídia</div>}
+      {m ? m.kind === 'video' ? <>
+          <video src={m.url} muted={muted} loop autoPlay playsInline onClick={(e) => { setMuted(!muted); e.currentTarget.play().catch(() => {}); }} style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }} />
+          <button className="pv-sound" onClick={() => setMuted(!muted)} aria-label={muted ? 'Ligar o som' : 'Desligar o som'} title={muted ? 'Ligar o som' : 'Desligar o som'}>{muted ? <VolumeX size={14} /> : <Volume2 size={14} />}</button>
+        </> : <img src={m.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ color: '#888', display: 'grid', placeItems: 'center', height: '100%', fontSize: 12 }}>Escolha a mídia</div>}
       {items.length > 1 && (
         <>
           {idx > 0 && <button className="pv-arrow" style={{ left: 6 }} onClick={() => setIdx(idx - 1)}><ChevronLeft size={14} /></button>}

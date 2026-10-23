@@ -4,7 +4,7 @@
 import { db, getSetting, now, setSetting } from '../db.ts';
 import { unseal } from '../lib/vault.ts';
 import { uid } from '../../../shared/timeline.ts';
-import { commentTriggers, dmText, followUpReply, pickCommentReply, privateReplyAllowed, withinWindow, type AutomationConfig } from '../../../shared/automation.ts';
+import { commentTriggers, deliveryMessage, describeOut, dmText, followUpReply, gateMessage, isButtonReply, nextAfterClick, openingMessage, pickCommentReply, privateReplyAllowed, usesButtonFlow, withinWindow, type AutomationConfig, type FlowStage, type OutMessage } from '../../../shared/automation.ts';
 import { graphVersion, MetaError } from './meta.ts';
 import { generateJson } from '../ai/providers.ts';
 import { brandContext } from '../ai/copy.ts';
@@ -49,14 +49,22 @@ function addMessage(contactId: string, m: { direction: 'in' | 'out'; kind: strin
 
 // ---------- envio ----------
 
-export async function sendDm(acc: any, contact: any, text: string, author: string): Promise<void> {
+/** Texto simples ou modelo com botões (button template da Meta). */
+function toGraph(m: OutMessage) {
+  if (!m.buttons?.length) return { text: m.text };
+  return { attachment: { type: 'template', payload: { template_type: 'button', text: m.text.slice(0, 640), buttons: m.buttons.slice(0, 3) } } };
+}
+
+export async function sendDm(acc: any, contact: any, msg: string | OutMessage, author: string): Promise<void> {
+  const out: OutMessage = typeof msg === 'string' ? { text: msg } : msg;
+  const text = describeOut(out);
   if (!withinWindow(contact.last_inbound_at)) {
     addMessage(contact.id, { direction: 'out', kind: 'dm', externalId: null, text, status: 'failed', author, error: 'Fora da janela de 24 h da Meta: só é possível responder depois que a pessoa mandar uma nova mensagem.' });
     throw new MetaError('Fora da janela de 24 h da Meta.', 'Só é possível responder depois que a pessoa mandar uma nova mensagem.');
   }
   const token = unseal(acc.token);
   try {
-    const r = await call('POST', `${acc.page_id}/messages`, {}, token, { recipient: { id: contact.external_id }, message: { text }, messaging_type: 'RESPONSE' });
+    const r = await call('POST', `${acc.page_id}/messages`, {}, token, { recipient: { id: contact.external_id }, message: toGraph(out), messaging_type: 'RESPONSE' });
     addMessage(contact.id, { direction: 'out', kind: 'dm', externalId: r.message_id ?? null, text, status: 'sent', author });
   } catch (e) {
     addMessage(contact.id, { direction: 'out', kind: 'dm', externalId: null, text, status: 'failed', author, error: (e as Error).message });
@@ -64,9 +72,33 @@ export async function sendDm(acc: any, contact: any, text: string, author: strin
   }
 }
 
-async function privateReply(acc: any, contact: any, commentId: string, text: string, author: string) {
-  const r = await call('POST', `${acc.page_id}/messages`, {}, unseal(acc.token), { recipient: { comment_id: commentId }, message: { text } });
-  addMessage(contact.id, { direction: 'out', kind: 'private_reply', externalId: r.message_id ?? null, text, context: { commentId }, status: 'sent', author });
+/** Resposta privada ao comentário. Devolve o id da pessoa no Direct (recipient_id), usado para continuar o fluxo. */
+async function privateReply(acc: any, contact: any, commentId: string, msg: string | OutMessage, author: string): Promise<string | null> {
+  let out: OutMessage = typeof msg === 'string' ? { text: msg } : msg;
+  let r: any;
+  try {
+    r = await call('POST', `${acc.page_id}/messages`, {}, unseal(acc.token), { recipient: { comment_id: commentId }, message: toGraph(out) });
+  } catch (e) {
+    // Se a Meta recusar o botão nesta resposta, manda em texto pedindo para responder com o título do botão (o fluxo reconhece igual).
+    const btn = out.buttons?.find((b) => b.type === 'postback');
+    if (!btn || /janela|não liberou/.test((e as Error).message)) throw e;
+    out = { text: `${out.text}\n\nResponda "${btn.title}" para receber.` };
+    r = await call('POST', `${acc.page_id}/messages`, {}, unseal(acc.token), { recipient: { comment_id: commentId }, message: toGraph(out) });
+  }
+  addMessage(contact.id, { direction: 'out', kind: 'private_reply', externalId: r.message_id ?? null, text: describeOut(out), context: { commentId, recipientId: r.recipient_id ?? null }, status: 'sent', author });
+  return r.recipient_id ?? null;
+}
+
+/** A pessoa segue o perfil? (API de perfil do Instagram para quem conversa com a conta). null = não foi possível verificar. */
+async function checkFollows(acc: any, recipientId: string): Promise<boolean | null> {
+  if (acc.network !== 'instagram') return null;
+  try {
+    const r = await call('GET', recipientId, { fields: 'is_user_follow_business' }, unseal(acc.token));
+    return typeof r.is_user_follow_business === 'boolean' ? r.is_user_follow_business : null;
+  } catch (e) {
+    console.warn('[automação] não foi possível verificar se segue:', (e as Error).message);
+    return null;
+  }
 }
 
 export async function replyComment(acc: any, contact: any, commentId: string, text: string, author: string) {
@@ -110,8 +142,18 @@ async function onComment(acc: any, contact: any, c: { id: string; text: string; 
         continue;
       }
       runOnce(a.id, c.id, 'dm', contact.id);
-      await privateReply(acc, contact, c.id, dmText(cfg, vars), 'automation');
-      finishRun(a.id, c.id, 'dm', 'done', null);
+      if (usesButtonFlow(cfg)) {
+        // Fluxo com botão: a 1ª mensagem só convida; o conteúdo vai depois do clique (e de seguir, se exigido).
+        const flowId = uid('fl_');
+        const recipient = await privateReply(acc, contact, c.id, openingMessage(cfg, vars, flowId), 'automation');
+        if (recipient) {
+          db.prepare("INSERT INTO automation_flows (id, automation_id, account_id, recipient_id, contact_id, comment_id, stage, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'opened', ?, ?) ON CONFLICT(automation_id, recipient_id) DO UPDATE SET stage = 'opened', checks = 0, comment_id = excluded.comment_id, updated_at = excluded.updated_at").run(flowId, a.id, acc.id, recipient, contact.id, c.id, now(), now());
+          finishRun(a.id, c.id, 'dm', 'done', 'Convite com botão enviado; aguardando o clique.');
+        } else finishRun(a.id, c.id, 'dm', 'done', 'Convite enviado, mas a Meta não informou o destinatário: o clique não poderá ser acompanhado.');
+      } else {
+        await privateReply(acc, contact, c.id, dmText(cfg, vars), 'automation');
+        finishRun(a.id, c.id, 'dm', 'done', null);
+      }
       finishRun(a.id, c.id, 'trigger', 'done', null);
       if (cfg.followUp?.options.length) db.prepare('UPDATE contacts SET tags = ? WHERE id = ?').run(JSON.stringify(Array.from(new Set([...JSON.parse(contact.tags), `aguarda:${a.id}`]))), contact.id);
     } catch (e) {
@@ -119,6 +161,32 @@ async function onComment(acc: any, contact: any, c: { id: string; text: string; 
       finishRun(a.id, c.id, 'trigger', 'failed', (e as Error).message);
     }
   }
+}
+
+/** Clique nos botões do fluxo (chega no Direct como mensagem com o título do botão). Devolve true se tratou. */
+async function onFlowMessage(acc: any, contact: any, msgId: string, text: string): Promise<boolean> {
+  const flows = db.prepare("SELECT f.*, a.config FROM automation_flows f JOIN automations a ON a.id = f.automation_id WHERE f.account_id = ? AND f.recipient_id = ? AND f.stage != 'delivered' AND a.active = 1").all(acc.id, contact.external_id) as any[];
+  for (const fl of flows) {
+    const cfg = JSON.parse(fl.config) as AutomationConfig;
+    const stage = fl.stage as FlowStage;
+    if (!isButtonReply(cfg, stage, text)) continue;
+    if (!runOnce(fl.automation_id, msgId, `click_${stage}`, contact.id)) return true;
+    const vars = { nome: contact.name, usuario: contact.username };
+    const follows = cfg.followGate?.enabled ? await checkFollows(acc, fl.recipient_id) : null;
+    const next = nextAfterClick(cfg, stage, follows, fl.checks);
+    const live = { ...contact, last_inbound_at: now() };
+    try {
+      if (next.send === 'delivery') await sendDm(acc, live, deliveryMessage(cfg, vars), 'automation');
+      else if (next.send === 'gate' || next.send === 'gate_retry') await sendDm(acc, live, gateMessage(cfg, fl.id, next.send === 'gate_retry'), 'automation');
+      db.prepare('UPDATE automation_flows SET stage = ?, checks = checks + ?, updated_at = ? WHERE id = ?').run(next.stage, cfg.followGate?.enabled ? 1 : 0, now(), fl.id);
+      const why = next.send === 'delivery' ? (cfg.followGate?.enabled ? 'Segue o perfil: conteúdo entregue.' : 'Clicou: conteúdo entregue.') : next.send === 'none' ? 'Limite de verificações atingido.' : follows === null ? 'Não foi possível confirmar se segue: pediu para seguir.' : 'Ainda não segue: pediu para seguir.';
+      finishRun(fl.automation_id, msgId, `click_${stage}`, 'done', why);
+    } catch (e) {
+      finishRun(fl.automation_id, msgId, `click_${stage}`, 'failed', (e as Error).message);
+    }
+    return true;
+  }
+  return false;
 }
 
 /** Resposta da pessoa a uma pergunta de continuidade. Devolve true se uma automação tratou a mensagem. */
@@ -240,7 +308,7 @@ async function pollAccount(acc: any) {
       const isNew = addMessage(contact.id, { direction: inbound ? 'in' : 'out', kind: 'dm', externalId: m.id, text: m.message ?? '(mídia)', status: inbound ? 'received' : 'sent', author: inbound ? 'contact' : 'human', at: m.created_time });
       if (isNew && inbound && m.created_time >= live) {
         const fresh = db.prepare('SELECT * FROM contacts WHERE id = ?').get(contact.id) as any;
-        if (!(await onFollowUp(acc, fresh, m.id, m.message ?? ''))) await autoReply(acc, fresh);
+        if (!(await onFlowMessage(acc, fresh, m.id, m.message ?? '')) && !(await onFollowUp(acc, fresh, m.id, m.message ?? ''))) await autoReply(acc, fresh);
       }
     }
   }

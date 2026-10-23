@@ -1,11 +1,40 @@
 // Automações de comentário → DM (palavra-chave), com editor visual, teste simulado e histórico.
 import { useEffect, useState } from 'react';
-import { Workflow, Plus, Trash2, Play, Pause, FlaskConical, History, ArrowDown, MessageSquare, AtSign, Send } from 'lucide-react';
+import { Workflow, Plus, Trash2, Play, Pause, FlaskConical, History, ArrowDown, MessageSquare, AtSign, Send, UserCheck } from 'lucide-react';
 import { api } from '../lib/api.ts';
 import { useApp, showError } from '../lib/store.ts';
 import { Empty, Field, Modal } from '../components/ui.tsx';
 import { fmtDateTime } from '../lib/format.ts';
-import { EMPTY_AUTOMATION, type AutomationConfig } from '../../../shared/automation.ts';
+import { DEFAULT_GATE, deliveryMessage, EMPTY_AUTOMATION, gateMessage, openingMessage, usesButtonFlow, type AutomationConfig, type OutMessage } from '../../../shared/automation.ts';
+
+/** Como a conversa aparece no Direct (mesmas mensagens que o servidor envia). */
+function DmPreview({ cfg }: { cfg: AutomationConfig }) {
+  const vars = { nome: 'Maria Silva', usuario: 'maria.silva' };
+  const Bubble = ({ m }: { m: OutMessage }) => (
+    <div className="dm-bubble">
+      <div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
+      {m.buttons?.map((b, i) => <div key={i} className="dm-btn">{b.title}</div>)}
+    </div>
+  );
+  const Me = ({ t }: { t: string }) => <div className="dm-me">{t}</div>;
+  if (!usesButtonFlow(cfg)) return <div className="dm-preview"><Bubble m={openingMessage(cfg, vars, 'p')} /></div>;
+  const open = openingMessage(cfg, vars, 'p');
+  return (
+    <div className="dm-preview">
+      <div className="dm-note">enviou uma mensagem para você sobre um comentário que você fez</div>
+      <Bubble m={open} />
+      <Me t={open.buttons![0].title} />
+      {cfg.followGate?.enabled && (
+        <>
+          <Bubble m={gateMessage(cfg, 'p', false)} />
+          <Me t={gateMessage(cfg, 'p', false).buttons![0].title} />
+          <div className="dm-note">(se já estiver seguindo)</div>
+        </>
+      )}
+      <Bubble m={deliveryMessage(cfg, vars)} />
+    </div>
+  );
+}
 import type { SocialAccount } from './SocialAccounts.tsx';
 
 interface Automation {
@@ -26,6 +55,8 @@ function Editor({ brandId, initial, onClose, onSaved }: { brandId: string; initi
   const [test, setTest] = useState({ comment: '', reply: '' });
   const [testOut, setTestOut] = useState<string[] | null>(null);
   const set = (p: Partial<AutomationConfig>) => setCfg({ ...cfg, ...p });
+  const flow = usesButtonFlow(cfg);
+  const isIg = accounts.find((a) => a.id === accountId)?.network === 'instagram';
 
   useEffect(() => {
     api.get<SocialAccount[]>(`/api/social/accounts?brandId=${brandId}`).then((l) => {
@@ -105,13 +136,53 @@ function Editor({ brandId, initial, onClose, onSaved }: { brandId: string; initi
         <ArrowDown size={16} className="faint" />
         <div className="flow-node">
           <div className="flow-title"><Send size={14} /> Enviar no Direct</div>
-          <Field label="Mensagem" help="Use {nome} para o primeiro nome da pessoa.">
+          <Field label={flow ? 'Primeira mensagem (convite)' : 'Mensagem'} help="Use {nome} para o primeiro nome da pessoa.">
             <textarea className="textarea" rows={3} value={cfg.dm} onChange={(e) => set({ dm: e.target.value })} />
           </Field>
+          <label className="row small">
+            <input type="checkbox" checked={!!cfg.button} onChange={(e) => set(e.target.checked ? { button: { label: 'Quero o link' } } : { button: null, followGate: null })} /> Mostrar um botão e entregar o conteúdo só depois do clique
+          </label>
+          {cfg.button && (
+            <Field label="Texto do botão (até 20 caracteres)">
+              <input className="input sm" maxLength={20} value={cfg.button.label} onChange={(e) => set({ button: { label: e.target.value } })} placeholder="Quero o link" />
+            </Field>
+          )}
+          {flow && (
+            <Field label="Mensagem de entrega (depois do clique)">
+              <textarea className="textarea" rows={2} value={cfg.delivery ?? ''} onChange={(e) => set({ delivery: e.target.value })} placeholder="Aqui está, {nome}! 👇" />
+            </Field>
+          )}
           <div className="grid cols-2">
-            <Field label="Texto do link (opcional)"><input className="input sm" value={cfg.link?.label ?? ''} onChange={(e) => set({ link: { label: e.target.value, url: cfg.link?.url ?? '' } })} placeholder="Baixe aqui" /></Field>
+            <Field label={flow ? 'Texto do botão do link' : 'Texto do link (opcional)'}><input className="input sm" maxLength={flow ? 20 : 80} value={cfg.link?.label ?? ''} onChange={(e) => set({ link: { label: e.target.value, url: cfg.link?.url ?? '' } })} placeholder={flow ? 'Acessar' : 'Baixe aqui'} /></Field>
             <Field label="Link"><input className="input sm" value={cfg.link?.url ?? ''} onChange={(e) => set({ link: { label: cfg.link?.label ?? '', url: e.target.value } })} placeholder="https://" /></Field>
           </div>
+        </div>
+        <ArrowDown size={16} className="faint" />
+        <div className="flow-node">
+          <div className="flow-title"><UserCheck size={14} /> Liberar só para quem segue (opcional)</div>
+          {isIg ? (
+            <>
+              <label className="row small">
+                <input type="checkbox" checked={!!cfg.followGate?.enabled} onChange={(e) => set(e.target.checked ? { followGate: { ...DEFAULT_GATE }, button: cfg.button ?? { label: 'Quero o link' } } : { followGate: null })} /> Entregar o conteúdo só se a pessoa seguir o perfil
+              </label>
+              {cfg.followGate?.enabled && (
+                <>
+                  <Field label="Mensagem para quem ainda não segue"><input className="input sm" value={cfg.followGate.message} onChange={(e) => set({ followGate: { ...cfg.followGate!, message: e.target.value } })} /></Field>
+                  <div className="grid cols-2">
+                    <Field label="Botão (até 20 caracteres)"><input className="input sm" maxLength={20} value={cfg.followGate.buttonLabel} onChange={(e) => set({ followGate: { ...cfg.followGate!, buttonLabel: e.target.value } })} /></Field>
+                    <Field label="Se tocar e ainda não seguir"><input className="input sm" value={cfg.followGate.notYet} onChange={(e) => set({ followGate: { ...cfg.followGate!, notYet: e.target.value } })} /></Field>
+                  </div>
+                  <span className="faint small">A verificação usa a API oficial do Instagram (campo "segue a empresa") no momento do toque. Se a Meta não responder, a pessoa recebe o pedido para seguir de novo — nunca entregamos sem confirmar.</span>
+                </>
+              )}
+            </>
+          ) : (
+            <span className="faint small">Disponível só para Instagram (a Meta não informa seguidores de Página do Facebook no Messenger).</span>
+          )}
+        </div>
+        <div className="flow-node">
+          <div className="flow-title">Prévia no Direct</div>
+          <DmPreview cfg={cfg} />
         </div>
         <ArrowDown size={16} className="faint" />
         <div className="flow-node">

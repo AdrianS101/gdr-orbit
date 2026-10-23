@@ -8,6 +8,7 @@ import { fmtDateTime } from '../lib/format.ts';
 import { SocialPreview, type PreviewMedia } from './SocialPreview.tsx';
 import { NET_ICON, NET_LABEL, type SocialAccount } from './SocialAccounts.tsx';
 import { UploadButton } from './Library.tsx';
+import { CoverPicker, type Cover } from './CoverPicker.tsx';
 
 interface MediaItem {
   source: 'export' | 'asset';
@@ -40,6 +41,7 @@ interface Post {
   status: string;
   scheduledAt: string | null;
   timezone: string;
+  cover: Cover;
   targets: Target[];
 }
 
@@ -72,6 +74,14 @@ function Composer({ brandId, post, onClose, onSaved }: { brandId: string; post: 
   const [net, setNet] = useState<string>('instagram');
   const [cur, setCur] = useState<Post | null>(post);
   const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [cover, setCover] = useState<Cover>(post?.cover ?? null);
+  const [coverWaiting, setCoverWaiting] = useState<string | null>(null);
+  useEffect(() => {
+    if (coverWaiting && media.some((m) => m.id === coverWaiting)) {
+      setCover({ kind: 'image', assetId: coverWaiting });
+      setCoverWaiting(null);
+    }
+  }, [media, coverWaiting]);
   const brand = useApp((s) => s.brands.find((b) => b.id === brandId));
   const locked = !!cur && !['draft', 'review', 'approved', 'failed'].includes(cur.status);
 
@@ -122,7 +132,7 @@ function Composer({ brandId, post, onClose, onSaved }: { brandId: string; post: 
   const previewAcc = selAccounts.find((a) => a.network === previewNet);
 
   const save = async (): Promise<Post | null> => {
-    const body = { brandId, type, media: chosen, caption, captions, targets, scheduledAt: when ? new Date(when).toISOString() : null, timezone: TZ };
+    const body = { brandId, type, media: chosen, caption, captions, cover: type === 'video' ? cover : null, targets, scheduledAt: when ? new Date(when).toISOString() : null, timezone: TZ };
     try {
       const p = cur ? await api.put<Post>(`/api/posts/${cur.id}`, body) : await api.post<Post>('/api/posts', body);
       setCur(p);
@@ -186,6 +196,20 @@ function Composer({ brandId, post, onClose, onSaved }: { brandId: string; post: 
               {!pickable.length && <span className="faint small">Nada disponível. Exporte um vídeo num projeto ou envie imagens na Biblioteca.</span>}
             </div>
           </Field>
+          {type === 'video' && (
+            <Field label="Capa do Reels">
+              <CoverPicker
+                brandId={brandId}
+                disabled={locked}
+                videoUrl={media.find((m) => m.id === chosen[0]?.id)?.url ?? null}
+                images={media.filter((m) => m.kind === 'image').map((m) => ({ id: m.id, url: m.url, name: m.name }))}
+                value={cover}
+                onChange={setCover}
+                onUploaded={(id) => (setCoverWaiting(id), loadMedia())}
+              />
+              {coverWaiting && <span className="faint small">Preparando a imagem de capa…</span>}
+            </Field>
+          )}
           <Field label="Texto da publicação">
             <textarea className="textarea" rows={6} disabled={locked} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Escreva ou use o texto gerado no projeto" />
             {suggestion && suggestion !== caption && !locked && (

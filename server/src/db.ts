@@ -133,6 +133,16 @@ const migrations: string[] = [
   );
   CREATE INDEX idx_ideas_brand ON ideas(brand_id, created_at);
   `,
+  `
+  CREATE TABLE automation_flows (
+    id TEXT PRIMARY KEY, automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL, recipient_id TEXT NOT NULL, contact_id TEXT, comment_id TEXT NOT NULL,
+    stage TEXT NOT NULL, checks INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    UNIQUE (automation_id, recipient_id)
+  );
+  CREATE INDEX idx_flows_recipient ON automation_flows(account_id, recipient_id);
+  `,
+  `ALTER TABLE posts ADD COLUMN cover TEXT;`,
 ];
 
 db.exec('CREATE TABLE IF NOT EXISTS _migrations (n INTEGER PRIMARY KEY)');

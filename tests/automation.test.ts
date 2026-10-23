@@ -50,3 +50,28 @@ test('janelas da Meta: 24 h para DM e 7 dias para resposta privada', () => {
   assert.ok(privateReplyAllowed('2026-10-20T00:00:00Z', now));
   assert.ok(!privateReplyAllowed('2026-10-10T00:00:00Z', now));
 });
+
+import { DEFAULT_GATE, deliveryMessage, gateMessage, isButtonReply, nextAfterClick, openingMessage, usesButtonFlow } from '../shared/automation.ts';
+
+test('fluxo com botão: convite → clique → (segue?) → entrega com link em botão', () => {
+  const c: AutomationConfig = { ...cfg, button: { label: 'Quero o link' }, delivery: 'Aqui está, {nome}!', followGate: { ...DEFAULT_GATE } };
+  assert.ok(usesButtonFlow(c));
+  const open = openingMessage(c, { nome: 'Ana Souza' }, 'f1');
+  assert.equal(open.text, 'Oi, Ana! Segue o guia.');
+  assert.deepEqual(open.buttons, [{ type: 'postback', title: 'Quero o link', payload: 'orbit:f1:open' }]);
+  assert.ok(isButtonReply(c, 'opened', 'Quero o link'));
+  assert.ok(!isButtonReply(c, 'opened', 'oi'));
+  assert.deepEqual(nextAfterClick(c, 'opened', false, 0), { send: 'gate', stage: 'gated' });
+  assert.deepEqual(nextAfterClick(c, 'opened', null, 0), { send: 'gate', stage: 'gated' }); // sem confirmação, não entrega
+  assert.ok(isButtonReply(c, 'gated', 'Estou seguindo'));
+  assert.ok(isButtonReply(c, 'gated', 'já segui!'));
+  assert.deepEqual(nextAfterClick(c, 'gated', false, 1), { send: 'gate_retry', stage: 'gated' });
+  assert.deepEqual(nextAfterClick(c, 'gated', true, 2), { send: 'delivery', stage: 'delivered' });
+  assert.equal(nextAfterClick(c, 'gated', false, 5).send, 'none');
+  assert.equal(gateMessage(c, 'f1', true).text, DEFAULT_GATE.notYet);
+  const d = deliveryMessage(c, { nome: 'Ana' });
+  assert.equal(d.buttons?.[0].type, 'web_url');
+  assert.ok(d.text.startsWith('Aqui está, Ana!'));
+  // sem trava: clique entrega direto
+  assert.equal(nextAfterClick({ ...c, followGate: null }, 'opened', null, 0).send, 'delivery');
+});

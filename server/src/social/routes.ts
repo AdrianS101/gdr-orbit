@@ -1,11 +1,13 @@
 // Contas sociais por marca, posts (vídeo, imagem, carrossel), fluxo de status, agendamento e publicação.
 // Fluxo: Rascunho → Em revisão → Aprovado → Agendado → Publicando → Publicado | Falhou | Aguardando publicação manual.
 import fs from 'node:fs';
+import path from 'node:path';
+import { runFfmpeg } from '../lib/ffmpeg.ts';
 import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { db, now, setSetting } from '../db.ts';
 import { AppError, badRequest, notFound } from '../lib/errors.ts';
-import { assetPath, exportPath } from '../lib/storage.ts';
+import { assetPath, exportPath, jobTmp } from '../lib/storage.ts';
 import { publicBase } from '../lib/http.ts';
 import { seal, unseal } from '../lib/vault.ts';
 import { readSecrets, setSecret } from '../ai/providers.ts';
@@ -24,7 +26,19 @@ function rowToPost(r: any) {
   const targets = (db.prepare('SELECT t.*, a.name AS account_name, a.username, a.avatar FROM post_targets t LEFT JOIN social_accounts a ON a.id = t.account_id WHERE t.post_id = ?').all(r.id) as any[]).map((t) => ({
     id: t.id, accountId: t.account_id, network: t.network, status: t.status, permalink: t.permalink, error: t.error, publishedAt: t.published_at, accountName: t.account_name, username: t.username, avatar: t.avatar,
   }));
-  return { id: r.id, brandId: r.brand_id, projectId: r.project_id, type: r.type, media: JSON.parse(r.media), caption: r.caption, captions: JSON.parse(r.captions), status: r.status, scheduledAt: r.scheduled_at, timezone: r.timezone, createdAt: r.created_at, updatedAt: r.updated_at, targets };
+  return { id: r.id, brandId: r.brand_id, projectId: r.project_id, type: r.type, media: JSON.parse(r.media), caption: r.caption, captions: JSON.parse(r.captions), status: r.status, scheduledAt: r.scheduled_at, timezone: r.timezone, cover: r.cover ? JSON.parse(r.cover) : null, createdAt: r.created_at, updatedAt: r.updated_at, targets };
+}
+
+/** Capa do Reels: um quadro do vídeo (segundos) ou uma imagem da Biblioteca da marca. */
+function cleanCover(c: any, brandId: string, type: string): string | null {
+  if (type !== 'video' || !c) return null;
+  if (c.kind === 'frame' && Number.isFinite(Number(c.t))) return JSON.stringify({ kind: 'frame', t: Math.max(0, Number(c.t)) });
+  if (c.kind === 'image') {
+    const a = db.prepare("SELECT 1 FROM assets WHERE id = ? AND brand_id = ? AND kind = 'image'").get(c.assetId, brandId);
+    if (!a) throw badRequest('A imagem de capa não está na Biblioteca desta marca.');
+    return JSON.stringify({ kind: 'image', assetId: c.assetId });
+  }
+  return null;
 }
 
 function resolveMedia(brandId: string, media: { source: 'export' | 'asset'; id: string }[]): PublishFile[] {
@@ -66,12 +80,25 @@ function setTargets(postId: string, targets: string[]) {
 
 // ---------- publicação (job) ----------
 
+/** Capa: no Instagram, quadro = thumb_offset (ms) e imagem = cover_url; no Facebook vai sempre como arquivo de imagem (quadro extraído pelo FFmpeg). */
+async function prepareCover(c: { kind: 'frame' | 'image'; t?: number; assetId?: string }, brandId: string, video: string, jobId: string): Promise<{ offsetMs?: number; frameFile?: string; imageFile?: string }> {
+  if (c.kind === 'image') {
+    const a = db.prepare("SELECT * FROM assets WHERE id = ? AND brand_id = ? AND kind = 'image'").get(c.assetId ?? '', brandId) as any;
+    if (!a) throw new Error('A imagem de capa não está mais na Biblioteca.');
+    return { imageFile: assetPath(a.brand_id, a.id, 'original', a.ext) };
+  }
+  const frameFile = path.join(jobTmp(jobId), 'capa.jpg');
+  await runFfmpeg(['-y', '-ss', String(c.t ?? 0), '-i', video, '-frames:v', '1', '-q:v', '2', frameFile]);
+  return { offsetMs: Math.round((c.t ?? 0) * 1000), frameFile };
+}
+
 export async function publishHandler(ctx: JobContext) {
   const { postId } = ctx.payload as { postId: string };
   const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(postId) as any;
   if (!post) throw new Error('O post foi excluído.');
   const files = resolveMedia(post.brand_id, JSON.parse(post.media));
   const captions = JSON.parse(post.captions);
+  const cover = post.type === 'video' && post.cover ? await prepareCover(JSON.parse(post.cover), post.brand_id, files[0].file, ctx.job.id) : null;
   const targets = db.prepare("SELECT * FROM post_targets WHERE post_id = ? AND status != 'published'").all(postId) as any[];
   const errors: string[] = [];
   let i = 0;
@@ -95,7 +122,7 @@ export async function publishHandler(ctx: JobContext) {
     db.prepare("UPDATE post_targets SET status = 'publishing', attempts = attempts + 1, error = NULL WHERE id = ?").run(t.id);
     try {
       const token = unseal(acc.token);
-      const r = acc.network === 'instagram' ? await publishInstagram({ igId: acc.external_id, pageId: acc.page_id, token }, post.type, files, caption, t.container_id, step) : await publishFacebook({ pageId: acc.external_id, token }, post.type, files, caption, step);
+      const r = acc.network === 'instagram' ? await publishInstagram({ igId: acc.external_id, pageId: acc.page_id, token }, post.type, files, caption, t.container_id, step, cover) : await publishFacebook({ pageId: acc.external_id, token }, post.type, files, caption, step, cover?.imageFile ?? cover?.frameFile);
       db.prepare("UPDATE post_targets SET status = 'published', external_id = ?, permalink = ?, published_at = ?, error = NULL WHERE id = ?").run(r.externalId, r.permalink, now(), t.id);
     } catch (e) {
       const msg = e instanceof MetaError ? `${e.message} ${e.hint}` : (e as Error).message;
@@ -275,8 +302,8 @@ export async function socialRoutes(app: FastifyInstance) {
     if (!db.prepare('SELECT 1 FROM brands WHERE id = ?').get(b.brandId)) throw badRequest('Escolha a marca.');
     validatePost({ type: b.type, media: b.media ?? [], targets: b.targets ?? [] }, b.brandId);
     const id = uid('po_');
-    db.prepare('INSERT INTO posts (id, brand_id, project_id, type, media, caption, captions, status, scheduled_at, timezone, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
-      id, b.brandId, b.projectId ?? null, b.type, JSON.stringify(b.media), String(b.caption ?? '').slice(0, 5000), JSON.stringify(b.captions ?? {}), 'draft', b.scheduledAt ?? null, b.timezone ?? 'America/Sao_Paulo', now(), now(),
+    db.prepare('INSERT INTO posts (id, brand_id, project_id, type, media, caption, captions, status, scheduled_at, timezone, cover, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+      id, b.brandId, b.projectId ?? null, b.type, JSON.stringify(b.media), String(b.caption ?? '').slice(0, 5000), JSON.stringify(b.captions ?? {}), 'draft', b.scheduledAt ?? null, b.timezone ?? 'America/Sao_Paulo', cleanCover(b.cover, b.brandId, b.type), now(), now(),
     );
     setTargets(id, b.targets ?? []);
     return rowToPost(db.prepare('SELECT * FROM posts WHERE id = ?').get(id));
@@ -289,8 +316,8 @@ export async function socialRoutes(app: FastifyInstance) {
     if (!EDITABLE.includes(r.status)) throw new AppError(409, 'Este post não pode ser editado agora.', r.status === 'scheduled' ? 'Cancele o agendamento para editar.' : 'Ele já foi publicado ou está publicando.');
     const b = (req.body ?? {}) as any;
     validatePost({ type: b.type, media: b.media ?? [], targets: b.targets ?? [] }, r.brand_id);
-    db.prepare('UPDATE posts SET type = ?, media = ?, caption = ?, captions = ?, scheduled_at = ?, timezone = ?, status = ?, updated_at = ? WHERE id = ?').run(
-      b.type, JSON.stringify(b.media), String(b.caption ?? '').slice(0, 5000), JSON.stringify(b.captions ?? {}), b.scheduledAt ?? null, b.timezone ?? r.timezone, r.status === 'approved' || r.status === 'failed' ? 'review' : r.status, now(), id,
+    db.prepare('UPDATE posts SET type = ?, media = ?, caption = ?, captions = ?, scheduled_at = ?, timezone = ?, cover = ?, status = ?, updated_at = ? WHERE id = ?').run(
+      b.type, JSON.stringify(b.media), String(b.caption ?? '').slice(0, 5000), JSON.stringify(b.captions ?? {}), b.scheduledAt ?? null, b.timezone ?? r.timezone, cleanCover(b.cover, r.brand_id, b.type), r.status === 'approved' || r.status === 'failed' ? 'review' : r.status, now(), id,
     );
     setTargets(id, b.targets ?? []);
     return rowToPost(db.prepare('SELECT * FROM posts WHERE id = ?').get(id));

@@ -12,6 +12,12 @@ export interface AutomationConfig {
   link?: { label: string; url: string } | null;
   /** Pergunta de continuidade e respostas por palavra-chave. */
   followUp?: { question: string; options: { keyword: string; reply: string }[] } | null;
+  /** Botão na 1ª mensagem (ex.: "Quero o link"). O conteúdo só é entregue depois do clique. */
+  button?: { label: string } | null;
+  /** Mensagem entregue depois do clique (com o link como botão). Aceita {nome}. */
+  delivery?: string;
+  /** Só entrega para quem segue o perfil (Instagram). */
+  followGate?: { enabled: boolean; message: string; buttonLabel: string; notYet: string } | null;
 }
 
 export const EMPTY_AUTOMATION: AutomationConfig = {
@@ -22,7 +28,67 @@ export const EMPTY_AUTOMATION: AutomationConfig = {
   dm: 'Oi, {nome}! Aqui está o material que você pediu:',
   link: null,
   followUp: null,
+  button: null,
+  delivery: 'Aqui está! 👇',
+  followGate: null,
 };
+
+export const DEFAULT_GATE = { enabled: true, message: 'Perfeito, mas você tem que estar seguindo pra receber...', buttonLabel: 'Estou seguindo', notYet: 'Ainda não encontrei seu follow 👀 Siga o perfil e toque no botão de novo.' };
+
+/** Mensagem com botões (template da Meta). Títulos de botão têm até 20 caracteres. */
+export interface OutMessage {
+  text: string;
+  buttons?: ({ type: 'postback'; title: string; payload: string } | { type: 'web_url'; title: string; url: string })[];
+}
+
+export type FlowStage = 'opened' | 'gated' | 'delivered';
+export const MAX_GATE_CHECKS = 5;
+
+const btnTitle = (t: string) => t.trim().slice(0, 20) || 'Continuar';
+
+/** A automação usa o fluxo com botão (abre → [segue?] → entrega)? */
+export const usesButtonFlow = (cfg: AutomationConfig) => !!cfg.button?.label?.trim() || !!cfg.followGate?.enabled;
+
+/** Primeira mensagem (resposta privada ao comentário). */
+export function openingMessage(cfg: AutomationConfig, vars: { nome?: string | null; usuario?: string | null }, flowId: string): OutMessage {
+  if (!usesButtonFlow(cfg)) return { text: dmText(cfg, vars) };
+  return { text: fill(cfg.dm, vars), buttons: [{ type: 'postback', title: btnTitle(cfg.button?.label || 'Quero receber'), payload: `orbit:${flowId}:open` }] };
+}
+
+/** Entrega final: texto + link como botão. */
+export function deliveryMessage(cfg: AutomationConfig, vars: { nome?: string | null; usuario?: string | null }): OutMessage {
+  const text = fill(cfg.delivery || 'Aqui está! 👇', vars) + (cfg.followUp?.question ? `\n\n${fill(cfg.followUp.question, vars)}` : '');
+  if (cfg.link?.url) return { text, buttons: [{ type: 'web_url', title: btnTitle(cfg.link.label || 'Acessar'), url: cfg.link.url }] };
+  return { text };
+}
+
+export function gateMessage(cfg: AutomationConfig, flowId: string, retry: boolean): OutMessage {
+  const g = { ...DEFAULT_GATE, ...(cfg.followGate ?? {}) };
+  return { text: retry ? g.notYet : g.message, buttons: [{ type: 'postback', title: btnTitle(g.buttonLabel), payload: `orbit:${flowId}:follow` }] };
+}
+
+/** A mensagem recebida é o clique no botão esperado nesta etapa? (o toque no botão chega como texto com o título). */
+export function isButtonReply(cfg: AutomationConfig, stage: FlowStage, text: string, payload?: string | null): boolean {
+  if (payload) return payload.endsWith(stage === 'opened' ? ':open' : ':follow');
+  const t = normalize(text);
+  if (!t) return false;
+  if (stage === 'opened') return t === normalize(btnTitle(cfg.button?.label || 'Quero receber'));
+  if (stage === 'gated') return t === normalize(btnTitle({ ...DEFAULT_GATE, ...(cfg.followGate ?? {}) }.buttonLabel)) || /(^| )(segui|seguindo|sigo|ja sigo)( |$)/.test(t);
+  return false;
+}
+
+/** Próximo passo depois do clique: entrega, ou pede para seguir (com limite de verificações). */
+export function nextAfterClick(cfg: AutomationConfig, stage: FlowStage, follows: boolean | null, checks: number): { send: 'delivery' | 'gate' | 'gate_retry' | 'none'; stage: FlowStage } {
+  if (stage === 'delivered') return { send: 'none', stage };
+  if (!cfg.followGate?.enabled || follows === true) return { send: 'delivery', stage: 'delivered' };
+  if (checks >= MAX_GATE_CHECKS) return { send: 'none', stage };
+  return { send: stage === 'gated' ? 'gate_retry' : 'gate', stage: 'gated' };
+}
+
+/** Texto para registro/prévia (mostra os botões entre colchetes). */
+export function describeOut(m: OutMessage): string {
+  return m.text + (m.buttons?.length ? '\n' + m.buttons.map((b) => `[${b.title}${b.type === 'web_url' ? ' → ' + b.url : ''}]`).join(' ') : '');
+}
 
 /** Minúsculas, sem acentos e sem pontuação/emojis nas bordas. */
 export function normalize(t: string): string {

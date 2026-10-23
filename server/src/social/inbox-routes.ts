@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { db, getSetting, now, setSetting } from '../db.ts';
 import { AppError, badRequest, notFound } from '../lib/errors.ts';
 import { uid } from '../../../shared/timeline.ts';
-import { commentTriggers, dmText, followUpReply, pickCommentReply, EMPTY_AUTOMATION, type AutomationConfig } from '../../../shared/automation.ts';
+import { commentTriggers, DEFAULT_GATE, deliveryMessage, describeOut, dmText, followUpReply, gateMessage, MAX_GATE_CHECKS, openingMessage, pickCommentReply, usesButtonFlow, EMPTY_AUTOMATION, type AutomationConfig } from '../../../shared/automation.ts';
 import { pollInbox, replyComment, sendDm, suggestReply } from './inbox.ts';
 import { MetaError } from './meta.ts';
 import { AiError } from '../ai/providers.ts';
@@ -21,6 +21,10 @@ function cleanConfig(c: any): AutomationConfig {
   if (!String(cfg.dm ?? '').trim()) throw badRequest('Escreva a mensagem que será enviada no direct.');
   cfg.commentReplies = (cfg.commentReplies ?? []).map(String).filter((x) => x.trim()).slice(0, 10);
   if (cfg.mediaIds !== 'all' && (!Array.isArray(cfg.mediaIds) || !cfg.mediaIds.length)) cfg.mediaIds = 'all';
+  cfg.button = cfg.button?.label?.trim() ? { label: cfg.button.label.trim().slice(0, 20) } : null;
+  cfg.followGate = cfg.followGate?.enabled ? { ...DEFAULT_GATE, ...cfg.followGate, buttonLabel: String(cfg.followGate.buttonLabel || DEFAULT_GATE.buttonLabel).slice(0, 20) } : null;
+  if (cfg.followGate && !cfg.button) cfg.button = { label: 'Quero receber' };
+  if (cfg.link?.url && !/^https?:\/\//i.test(cfg.link.url)) throw badRequest('O link precisa começar com https://');
   return cfg;
 }
 
@@ -158,6 +162,15 @@ export async function inboxRoutes(app: FastifyInstance) {
     const steps = [`Dispara pela palavra-chave "${hit}".`];
     const pub = pickCommentReply(cfg, 0, vars);
     if (pub) steps.push(`Resposta pública no comentário: "${pub}"`);
+    if (usesButtonFlow(cfg)) {
+      steps.push(`DM privada com botão: "${describeOut(openingMessage(cfg, vars, 'teste'))}"`);
+      steps.push(`Quando a pessoa tocar em "${cfg.button!.label}":`);
+      if (cfg.followGate?.enabled) {
+        steps.push(`  • se já segue o perfil → entrega: "${describeOut(deliveryMessage(cfg, vars))}"`);
+        steps.push(`  • se não segue → "${describeOut(gateMessage(cfg, 'teste', false))}"; ao tocar de novo, verifica outra vez (até ${MAX_GATE_CHECKS} vezes). Se ainda não seguir: "${cfg.followGate.notYet}"`);
+      } else steps.push(`  • entrega: "${describeOut(deliveryMessage(cfg, vars))}"`);
+      return { triggered: true, steps };
+    }
     steps.push(`DM privada: "${dmText(cfg, vars)}"`);
     if (reply) {
       const f = followUpReply(cfg, reply);
