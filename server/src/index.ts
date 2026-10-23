@@ -1,4 +1,4 @@
-// GDR Digital — servidor local.
+// GDR Digital — servidor local/produção.
 import fs from 'node:fs';
 import path from 'node:path';
 import Fastify from 'fastify';
@@ -35,6 +35,9 @@ const app = Fastify({
 
 await app.register(cookie);
 await app.register(multipart, { limits: { fileSize: config.maxUploadBytes, files: 1 } });
+
+// Healthcheck público para plataformas de hospedagem.
+app.get('/health', async () => ({ ok: true }));
 
 // Todas as rotas da API exigem sessão, exceto as de autenticação.
 app.addHook('onRequest', async (req) => {
