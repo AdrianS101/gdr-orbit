@@ -13,7 +13,8 @@ function DmPreview({ cfg }: { cfg: AutomationConfig }) {
   const Bubble = ({ m }: { m: OutMessage }) => (
     <div className="dm-bubble">
       <div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
-      {m.buttons?.map((b, i) => <div key={i} className="dm-btn">{b.title}</div>)}
+      {m.buttons?.filter((b) => b.type === 'web_url').map((b, i) => <div key={i} className="dm-btn">{b.title}</div>)}
+      {!!m.buttons?.some((b) => b.type === 'postback') && <div className="dm-qrs">{m.buttons!.filter((b) => b.type === 'postback').map((b, i) => <span key={i} className="dm-qr">{b.title}</span>)}</div>}
     </div>
   );
   const Me = ({ t }: { t: string }) => <div className="dm-me">{t}</div>;

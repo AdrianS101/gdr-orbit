@@ -22,6 +22,7 @@ async function call(method: 'GET' | 'POST', path: string, params: Record<string,
     const e = j.error ?? {};
     if (isAppBlock(String(e.message ?? ''))) throw new MetaError('A Meta bloqueou temporariamente o app.', 'Confirme a conta em developers.facebook.com. Não precisa reconectar os perfis.');
     if (e.code === 10 || e.code === 200 || e.code === 230) throw new MetaError(`A Meta não liberou mensagens/comentários para esta conexão (${e.message}).`, 'Reconecte o perfil aceitando as permissões de mensagens e comentários e ative "Permitir acesso a mensagens" no app do Instagram.');
+    if (e.error_subcode === 2534022) throw new MetaError('A Meta não abriu a conversa para esta pessoa (fora da janela de 24 h).', 'A pessoa precisa mandar uma mensagem (ou tocar numa resposta rápida) antes de receber a próxima.');
     if (e.code === 551 || e.error_subcode === 2018278) throw new MetaError('A pessoa não pode receber esta mensagem agora (fora da janela permitida pela Meta).', 'Responda quando ela mandar uma nova mensagem.');
     throw new MetaError(String(e.message ?? `HTTP ${r.status}`));
   }
@@ -53,9 +54,19 @@ function addMessage(contactId: string, m: { direction: 'in' | 'out'; kind: strin
 // ---------- envio ----------
 
 /** Texto simples ou modelo com botões (button template da Meta). */
+/**
+ * Texto, "respostas rápidas" ou modelo com botão de link.
+ * Botões de continuar (postback) vão como respostas rápidas: o toque vira uma mensagem de verdade da pessoa,
+ * que abre a janela de 24 h da Meta (o toque em botão postback dentro do balão não abre — erro #10 2534022).
+ */
 function toGraph(m: OutMessage) {
-  if (!m.buttons?.length) return { text: m.text };
-  return { attachment: { type: 'template', payload: { template_type: 'button', text: m.text.slice(0, 640), buttons: m.buttons.slice(0, 3) } } };
+  const links = (m.buttons ?? []).filter((b) => b.type === 'web_url');
+  const quick = (m.buttons ?? []).filter((b) => b.type === 'postback');
+  const msg: any = links.length
+    ? { attachment: { type: 'template', payload: { template_type: 'button', text: m.text.slice(0, 640), buttons: links.slice(0, 3) } } }
+    : { text: m.text.slice(0, 1000) };
+  if (quick.length) msg.quick_replies = quick.slice(0, 13).map((b: any) => ({ content_type: 'text', title: b.title.slice(0, 20), payload: b.payload }));
+  return msg;
 }
 
 export async function sendDm(acc: any, contact: any, msg: string | OutMessage, author: string): Promise<void> {
@@ -128,7 +139,10 @@ async function onComment(acc: any, contact: any, c: { id: string; text: string; 
     if (!commentTriggers(cfg, c.text, c.mediaId)) continue;
     // Anti-duplicidade: cada comentário dispara cada automação no máximo uma vez; e cada pessoa recebe a DM uma vez por automação.
     if (!runOnce(a.id, c.id, 'trigger', contact.id)) continue;
-    const already = db.prepare("SELECT 1 FROM automation_runs WHERE automation_id = ? AND contact_id = ? AND step = 'dm' AND status = 'done'").get(a.id, contact.id);
+    const cfgFlow = usesButtonFlow(cfg);
+    const already = cfgFlow
+      ? db.prepare("SELECT 1 FROM automation_flows WHERE automation_id = ? AND contact_id = ? AND stage = 'delivered'").get(a.id, contact.id)
+      : db.prepare("SELECT 1 FROM automation_runs WHERE automation_id = ? AND contact_id = ? AND step = 'dm' AND status = 'done'").get(a.id, contact.id);
     const vars = { nome: contact.name, usuario: contact.username };
     try {
       const reply = pickCommentReply(cfg, Number.parseInt(c.id.slice(-4), 36) || 0, vars);
