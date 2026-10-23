@@ -148,6 +148,7 @@ function Editor({ brandId, initial, onClose, onSaved }: { brandId: string; initi
               <input className="input sm" maxLength={20} value={cfg.button.label} onChange={(e) => set({ button: { label: e.target.value } })} placeholder="Quero o link" />
             </Field>
           )}
+          {flow && <div className="alert warning small">Enquanto o app da Meta não tiver <b>acesso avançado</b> de mensagens (análise do app), a Meta só permite a 1ª mensagem para quem comentou. Nesse caso o GDR Digital manda o link já na 1ª mensagem (botão de link) e a trava de seguidor fica desligada.</div>}
           {flow && (
             <Field label="Mensagem de entrega (depois do clique)">
               <textarea className="textarea" rows={2} value={cfg.delivery ?? ''} onChange={(e) => set({ delivery: e.target.value })} placeholder="Aqui está, {nome}! 👇" />

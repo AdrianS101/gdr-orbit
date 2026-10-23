@@ -4,7 +4,7 @@
 import { db, getSetting, now, setSetting } from '../db.ts';
 import { unseal } from '../lib/vault.ts';
 import { uid } from '../../../shared/timeline.ts';
-import { commentTriggers, deliveryMessage, describeOut, dmText, followUpReply, gateMessage, isButtonReply, nextAfterClick, openingMessage, pickCommentReply, privateReplyAllowed, usesButtonFlow, withinWindow, type AutomationConfig, type FlowStage, type OutMessage } from '../../../shared/automation.ts';
+import { commentTriggers, deliveryMessage, fill, describeOut, dmText, followUpReply, gateMessage, isButtonReply, nextAfterClick, openingMessage, pickCommentReply, privateReplyAllowed, usesButtonFlow, withinWindow, type AutomationConfig, type FlowStage, type OutMessage } from '../../../shared/automation.ts';
 import { graphVersion, MetaError } from './meta.ts';
 import { generateJson } from '../ai/providers.ts';
 import { brandContext } from '../ai/copy.ts';
@@ -22,6 +22,7 @@ async function call(method: 'GET' | 'POST', path: string, params: Record<string,
     const e = j.error ?? {};
     if (isAppBlock(String(e.message ?? ''))) throw new MetaError('A Meta bloqueou temporariamente o app.', 'Confirme a conta em developers.facebook.com. Não precisa reconectar os perfis.');
     if (e.code === 10 || e.code === 200 || e.code === 230) throw new MetaError(`A Meta não liberou mensagens/comentários para esta conexão (${e.message}).`, 'Reconecte o perfil aceitando as permissões de mensagens e comentários e ative "Permitir acesso a mensagens" no app do Instagram.');
+    if (e.error_subcode === 2534048) throw new MetaError('O app da Meta ainda não tem acesso avançado de mensagens: só dá para enviar a 1ª resposta ao comentário para quem não tem função no app.', 'Para conversar no Direct com qualquer pessoa, o app precisa passar pela análise da Meta (instagram_manage_messages). Enquanto isso, a automação manda o link já na 1ª mensagem.');
     if (e.error_subcode === 2534022) throw new MetaError('A Meta não abriu a conversa para esta pessoa (fora da janela de 24 h).', 'A pessoa precisa mandar uma mensagem (ou tocar numa resposta rápida) antes de receber a próxima.');
     if (e.code === 551 || e.error_subcode === 2018278) throw new MetaError('A pessoa não pode receber esta mensagem agora (fora da janela permitida pela Meta).', 'Responda quando ela mandar uma nova mensagem.');
     throw new MetaError(String(e.message ?? `HTTP ${r.status}`));
@@ -103,6 +104,12 @@ async function privateReply(acc: any, contact: any, commentId: string, msg: stri
   return r.recipient_id ?? null;
 }
 
+/** Perfil cujo app ainda não tem acesso avançado de mensagens (detectado por erro real da Meta). */
+const dmLimited = (acc: any) => getSetting<boolean>(`meta.dmLimited.${acc.id}`, false);
+function markDmLimited(acc: any) {
+  setSetting(`meta.dmLimited.${acc.id}`, true);
+}
+
 /** A pessoa segue o perfil? (API de perfil do Instagram para quem conversa com a conta). null = não foi possível verificar. */
 async function checkFollows(acc: any, recipientId: string): Promise<boolean | null> {
   if (acc.network !== 'instagram') return null;
@@ -159,7 +166,15 @@ async function onComment(acc: any, contact: any, c: { id: string; text: string; 
         continue;
       }
       runOnce(a.id, c.id, 'dm', contact.id);
-      if (usesButtonFlow(cfg)) {
+      if (usesButtonFlow(cfg) && dmLimited(acc)) {
+        // App sem "acesso avançado" de mensagens: a Meta só deixa enviar a 1ª mensagem (resposta ao comentário).
+        // Então o link vai já nela, como botão — funciona para qualquer pessoa.
+        const out = { ...deliveryMessage(cfg, vars), text: `${fill(cfg.dm, vars)}
+
+${fill(cfg.delivery || '', vars)}`.trim() };
+        await privateReply(acc, contact, c.id, out, 'automation');
+        finishRun(a.id, c.id, 'dm', 'done', 'Link enviado direto na 1ª mensagem (app sem acesso avançado de mensagens da Meta).');
+      } else if (usesButtonFlow(cfg)) {
         // Fluxo com botão: a 1ª mensagem só convida; o conteúdo vai depois do clique (e de seguir, se exigido).
         const flowId = uid('fl_');
         const recipient = await privateReply(acc, contact, c.id, openingMessage(cfg, vars, flowId), 'automation');
@@ -199,6 +214,7 @@ async function onFlowMessage(acc: any, contact: any, msgId: string, text: string
       const why = next.send === 'delivery' ? (cfg.followGate?.enabled ? 'Segue o perfil: conteúdo entregue.' : 'Clicou: conteúdo entregue.') : next.send === 'none' ? 'Limite de verificações atingido.' : follows === null ? 'Não foi possível confirmar se segue: pediu para seguir.' : 'Ainda não segue: pediu para seguir.';
       finishRun(fl.automation_id, msgId, `click_${stage}`, 'done', why);
     } catch (e) {
+      if (/acesso avançado|janela de 24 h/i.test((e as Error).message)) markDmLimited(acc);
       finishRun(fl.automation_id, msgId, `click_${stage}`, 'failed', (e as Error).message);
     }
     return true;
