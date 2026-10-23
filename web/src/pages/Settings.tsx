@@ -44,6 +44,17 @@ export function SettingsPage() {
   const [ai, setAi] = useState<AiSettings | null>(null);
   const [key, setKey] = useState('');
   const [gkey, setGkey] = useState('');
+  const [okey, setOkey] = useState('');
+  const saveOpenai = async (value: string | null) => {
+    try {
+      await api.put('/api/settings/ai/openai-key', { key: value });
+      setOkey('');
+      loadAi();
+      useApp.getState().toast({ kind: 'success', title: value ? 'Chave da OpenAI salva. Clique em Testar.' : 'Chave removida' });
+    } catch (e) {
+      showError(e);
+    }
+  };
   const saveGemini = async (value: string | null) => {
     try {
       await api.put('/api/settings/ai/gemini-key', { key: value });
@@ -177,6 +188,15 @@ export function SettingsPage() {
                   </div>
                 </Field>
               )}
+              {p.id === 'openai' && (
+                <Field label="Chave da API da OpenAI" help={<>Crie em <b>platform.openai.com → API keys</b> e adicione crédito em <b>Billing</b>. A assinatura do ChatGPT não vale para a API.</>}>
+                  <div className="row">
+                    <input className="input mono" type="password" autoComplete="off" placeholder={p.configured ? 'Substituir chave atual' : 'sk-…'} value={okey} onChange={(e) => setOkey(e.target.value)} />
+                    <button className="btn sm" disabled={!okey} onClick={() => saveOpenai(okey)}><KeyRound size={14} /> Salvar</button>
+                    {p.configured && <button className="btn ghost sm" onClick={() => saveOpenai(null)}>Remover</button>}
+                  </div>
+                </Field>
+              )}
               {p.id === 'anthropic' && (
                 <div className="col">
                   <Field label="Chave da API" help="A chave fica guardada apenas no servidor local (pasta data). Ela nunca é enviada de volta para o navegador.">
@@ -205,7 +225,8 @@ export function SettingsPage() {
           {ai && (
             <Field label="Qual provedor usar">
               <select className="select" style={{ maxWidth: 360 }} value={ai.preference} onChange={(e) => saveAi({ preference: e.target.value })}>
-                <option value="auto">Automático (Gemini → API Anthropic → Claude Code)</option>
+                <option value="auto">Automático: Gemini e, se falhar, os outros testados (OpenAI → Anthropic → Claude Code)</option>
+                <option value="openai">Sempre OpenAI (GPT)</option>
                 <option value="gemini">Sempre Gemini (gratuito)</option>
                 <option value="claude-cli">Sempre Claude Code</option>
                 <option value="anthropic">Sempre API da Anthropic</option>

@@ -10,7 +10,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config.ts';
 import { getSetting, setSetting } from '../db.ts';
 
-export type ProviderId = 'gemini' | 'anthropic' | 'claude-cli';
+export type ProviderId = 'gemini' | 'openai' | 'anthropic' | 'claude-cli';
 
 export interface ProviderStatus {
   id: ProviderId;
@@ -297,6 +297,75 @@ async function geminiJson<T>(req: JsonRequest): Promise<JsonResult<T>> {
   }
 }
 
+// ---------- OpenAI (GPT) — chave de API própria, cobrança por uso (separada da assinatura do ChatGPT) ----------
+
+function openaiKey(): string | null {
+  return readSecrets().OPENAI_API_KEY || process.env.OPENAI_API_KEY || null;
+}
+
+/** Modelos preferidos, do mais indicado ao mais simples; usa o primeiro que a chave tiver. */
+const OPENAI_PREFERRED = ['gpt-5.5-mini', 'gpt-5.1-mini', 'gpt-5-mini', 'gpt-4.1-mini', 'gpt-4o-mini'];
+
+async function openaiModel(key: string): Promise<string> {
+  const saved = getSetting<string | null>('ai.openaiModel', null);
+  if (saved) return saved;
+  try {
+    const r = await fetch('https://api.openai.com/v1/models', { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) });
+    const j: any = await r.json();
+    const ids: string[] = (j.data ?? []).map((m: any) => m.id);
+    const pick = OPENAI_PREFERRED.find((m) => ids.includes(m)) ?? ids.filter((i) => /^gpt-[\d.]+-mini$/.test(i)).sort().pop() ?? 'gpt-4o-mini';
+    setSetting('ai.openaiModel', pick);
+    return pick;
+  } catch {
+    return 'gpt-4o-mini';
+  }
+}
+
+async function openaiJson<T>(req: JsonRequest): Promise<JsonResult<T>> {
+  const key = openaiKey();
+  if (!key) throw new AiError('A chave da OpenAI não está configurada.', 'Crie uma chave em platform.openai.com → API keys e cole em Configurações > IA.');
+  const model = await openaiModel(key);
+  // Saída estruturada estrita só quando o formato permite (todos os campos obrigatórios e sem campos extras).
+  const strict = req.schema.additionalProperties === false;
+  let res: Response;
+  try {
+    res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: req.system },
+          { role: 'user', content: req.prompt },
+        ],
+        max_completion_tokens: req.maxTokens ?? 8000,
+        response_format: strict ? { type: 'json_schema', json_schema: { name: 'resposta', schema: req.schema, strict: true } } : { type: 'json_object' },
+      }),
+      signal: AbortSignal.timeout(90_000),
+    });
+  } catch {
+    throw new AiError('Sem conexão com a OpenAI.', 'Verifique sua internet e tente novamente.');
+  }
+  const j: any = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = String(j?.error?.message ?? res.status);
+    if (res.status === 401) throw new AiError('A chave da OpenAI foi recusada.', 'Confira a chave em platform.openai.com → API keys.');
+    if (res.status === 429 && /quota|billing|credit/i.test(msg)) throw new AiError('A conta da OpenAI está sem saldo.', 'Adicione crédito em platform.openai.com → Billing (a assinatura do ChatGPT não vale para a API).');
+    if (res.status === 429) throw new AiError('Limite de uso da OpenAI atingido por agora.', 'Aguarde um minuto e tente de novo.');
+    if (res.status === 404 || /model/i.test(msg)) setSetting('ai.openaiModel', null);
+    throw new AiError(`A OpenAI retornou um erro: ${msg.slice(0, 200)}`, 'Tente novamente em instantes.');
+  }
+  const text = j.choices?.[0]?.message?.content ?? '';
+  if (j.choices?.[0]?.message?.refusal) throw new AiError('O GPT recusou este pedido.', 'Reformule e tente de novo.');
+  try {
+    return { data: JSON.parse(text) as T, provider: 'openai', model };
+  } catch {
+    const d = extractJson(text);
+    if (!d) throw new AiError('A IA não devolveu o formato esperado.', 'Tente novamente.');
+    return { data: d as T, provider: 'openai', model };
+  }
+}
+
 // ---------- seleção ----------
 
 function verified(): Record<string, string> {
@@ -314,6 +383,14 @@ export function providerStatuses(): ProviderStatus[] {
   const cli = findClaudeCli();
   const v = verified();
   return [
+    {
+      id: 'openai',
+      name: 'OpenAI (GPT)',
+      configured: !!openaiKey(),
+      verifiedAt: openaiKey() ? (v.openai ?? null) : null,
+      detail: openaiKey() ? 'Chave configurada. Modelo: ' + (getSetting<string | null>('ai.openaiModel', null) ?? 'escolhido no primeiro uso') + '.' : 'Sem chave. Crie em platform.openai.com → API keys.',
+      costNote: 'Cobrança por uso na sua conta da OpenAI (separada da assinatura do ChatGPT). Usado também como reserva quando o Gemini falhar.',
+    },
     {
       id: 'gemini',
       name: 'Google Gemini (gratuito)',
@@ -346,6 +423,7 @@ export function activeProvider(): ProviderId | null {
   const st = providerStatuses();
   if (pref !== 'auto') return st.find((s) => s.id === pref)?.configured ? pref : null;
   if (geminiKey()) return 'gemini';
+  if (openaiKey()) return 'openai';
   if (anthropicKey()) return 'anthropic';
   if (findClaudeCli()) return 'claude-cli';
   return null;
@@ -357,15 +435,41 @@ export function verifiedProvider(): ProviderId | null {
   return p && verified()[p] ? p : null;
 }
 
-export async function generateJson<T>(req: JsonRequest, force?: ProviderId): Promise<JsonResult<T>> {
-  const p = force ?? activeProvider();
-  if (!p) throw new AiError('Nenhum provedor de IA está configurado.', 'Vá em Configurações > IA e conecte o Claude Code ou adicione uma chave da API da Anthropic.');
+const TRANSIENT = /sobrecarregad|Limite|Sem conexão|sem saldo|demorou|não retornou|formato esperado|retornou um erro/;
+
+async function runProvider<T>(p: ProviderId, req: JsonRequest): Promise<JsonResult<T>> {
   try {
-    const r = p === 'gemini' ? await geminiJson<T>(req) : p === 'anthropic' ? await anthropicJson<T>(req) : await cliJson<T>(req);
+    const r = p === 'gemini' ? await geminiJson<T>(req) : p === 'openai' ? await openaiJson<T>(req) : p === 'anthropic' ? await anthropicJson<T>(req) : await cliJson<T>(req);
     markVerified(p, true);
     return r;
   } catch (e) {
     if (e instanceof AiError && /não está conectado|foi recusada|não está configurada|não foi encontrado/.test(e.message)) markVerified(p, false);
+    throw e;
+  }
+}
+
+/** Provedores de reserva: os outros já configurados e testados, na ordem gemini → openai → anthropic → claude-cli. */
+function backups(first: ProviderId): ProviderId[] {
+  const v = verified();
+  const has: Record<ProviderId, boolean> = { gemini: !!geminiKey(), openai: !!openaiKey(), anthropic: !!anthropicKey(), 'claude-cli': !!findClaudeCli() };
+  return (['gemini', 'openai', 'anthropic', 'claude-cli'] as ProviderId[]).filter((p) => p !== first && has[p] && v[p]);
+}
+
+export async function generateJson<T>(req: JsonRequest, force?: ProviderId): Promise<JsonResult<T>> {
+  const p = force ?? activeProvider();
+  if (!p) throw new AiError('Nenhum provedor de IA está configurado.', 'Vá em Configurações > IA e adicione a chave do Gemini (grátis) ou da OpenAI.');
+  try {
+    return await runProvider<T>(p, req);
+  } catch (e) {
+    // No modo automático, se o provedor principal falhar por motivo passageiro, tenta os outros já testados.
+    if (force || getSetting('ai.provider', 'auto') !== 'auto' || !(e instanceof AiError) || !TRANSIENT.test(e.message)) throw e;
+    for (const b of backups(p)) {
+      try {
+        return await runProvider<T>(b, req);
+      } catch {
+        /* tenta o próximo */
+      }
+    }
     throw e;
   }
 }

@@ -94,7 +94,7 @@ export async function systemRoutes(app: FastifyInstance) {
 
   app.put('/api/settings/ai', async (req) => {
     const b = (req.body ?? {}) as { preference?: string; model?: string; cliModel?: string; claudeCliPath?: string | null };
-    if (b.preference && ['auto', 'gemini', 'anthropic', 'claude-cli'].includes(b.preference)) setSetting('ai.provider', b.preference);
+    if (b.preference && ['auto', 'gemini', 'openai', 'anthropic', 'claude-cli'].includes(b.preference)) setSetting('ai.provider', b.preference);
     if (b.model && /^claude-[a-z0-9-]+$/.test(b.model)) setSetting('ai.model', b.model);
     if (b.cliModel && /^[a-z0-9.-]+$/i.test(b.cliModel)) setSetting('ai.cliModel', b.cliModel);
     if (b.claudeCliPath !== undefined) setSetting('ai.claudeCliPath', b.claudeCliPath || null);
@@ -115,6 +115,15 @@ export async function systemRoutes(app: FastifyInstance) {
     const k = (key ?? '').trim();
     if (k && (k.startsWith('GOCSPX') || !/^(AIza[0-9A-Za-z_-]{30,}|AQ.[0-9A-Za-z._-]{20,})$/.test(k))) throw badRequest('Essa não é uma chave do Gemini.', k.startsWith('GOCSPX') ? 'Isso é a chave secreta do Google Drive. Copie a chave do Gemini em aistudio.google.com → Chaves de API (começa com "AIza" ou "AQ.").' : 'A chave do Gemini começa com "AIza" ou "AQ.". Copie em aistudio.google.com → Chaves de API.');
     setSecret('GEMINI_API_KEY', key ? key.trim() : null);
+    return { ok: true };
+  });
+
+  app.put('/api/settings/ai/openai-key', async (req) => {
+    const { key } = (req.body ?? {}) as { key?: string | null };
+    const k = (key ?? '').trim();
+    if (k && !/^sk-[A-Za-z0-9_-]{20,}$/.test(k)) throw badRequest('Essa não parece ser uma chave da OpenAI.', 'A chave da API da OpenAI começa com "sk-". Crie em platform.openai.com → API keys.');
+    setSecret('OPENAI_API_KEY', k || null);
+    setSetting('ai.openaiModel', null);
     return { ok: true };
   });
 
