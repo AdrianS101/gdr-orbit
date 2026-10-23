@@ -1,6 +1,6 @@
 // Conteúdo e calendário: posts por marca, fluxo de aprovação, agendamento, publicação e prévia por rede.
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus, List, CalendarDays, ExternalLink, Download, Copy, Sparkles, Film, Image as ImageIcon, Layers } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, List, CalendarDays, ExternalLink, Download, Copy, Sparkles, Film, Image as ImageIcon, Layers, Clapperboard, Check, X as XIcon, Clock } from 'lucide-react';
 import { api } from '../lib/api.ts';
 import { useApp, showError, onJob } from '../lib/store.ts';
 import { Empty, Field, Modal } from '../components/ui.tsx';
@@ -227,19 +227,29 @@ function Composer({ brandId, post, onClose, onSaved }: { brandId: string; post: 
               </details>
             ))}
           </Field>
-          <Field label="Publicar em">
+          <Field label={`Publicar em (${targets.length} selecionada${targets.length === 1 ? '' : 's'})`} help="Escolha uma ou várias redes: o mesmo post sai em todas, cada uma com seu texto se você adaptar abaixo.">
             {!accounts.length && <span className="faint small">Nenhum perfil conectado a esta marca. Conecte em Marcas → Perfis sociais.</span>}
-            {accounts.map((a) => {
-              const I = NET_ICON[a.network];
-              return (
-                <label key={a.id} className="row small">
-                  <input type="checkbox" disabled={locked || (!a.assisted && a.status !== 'connected')} checked={targets.includes(a.id)} onChange={(e) => setTargets(e.target.checked ? [...targets, a.id] : targets.filter((t) => t !== a.id))} />
-                  <I size={14} /> {a.username ? `@${a.username}` : a.name}
-                  {a.assisted && <span className="badge warning">assistido</span>}
-                  {!a.assisted && a.status !== 'connected' && <span className="badge danger">reconectar</span>}
-                </label>
-              );
-            })}
+            <div className="net-pick">
+              {accounts.length > 1 && (() => {
+                const ok = accounts.filter((a) => a.assisted || a.status === 'connected').map((a) => a.id);
+                const all = ok.length > 0 && ok.every((id) => targets.includes(id));
+                return <button type="button" disabled={locked} className={`net-chip ${all ? 'on' : ''}`} onClick={() => setTargets(all ? [] : ok)}>Todas</button>;
+              })()}
+              {accounts.map((a) => {
+                const I = NET_ICON[a.network];
+                const usable = a.assisted || a.status === 'connected';
+                const on = targets.includes(a.id);
+                return (
+                  <button type="button" key={a.id} disabled={locked || !usable} className={`net-chip ${on ? 'on' : ''}`} onClick={() => setTargets(on ? targets.filter((t) => t !== a.id) : [...targets, a.id])} title={usable ? '' : 'Reconecte este perfil em Marcas → Perfis sociais'}>
+                    <span className={`net-dot net-${a.network}`}><I size={11} /></span>
+                    {a.username ? `@${a.username}` : a.name}
+                    {a.assisted && <span className="badge warning">assistido</span>}
+                    {!usable && <span className="badge danger">reconectar</span>}
+                    {on && <Check size={13} />}
+                  </button>
+                );
+              })}
+            </div>
           </Field>
           <Field label={`Data e horário (${TZ})`}>
             <input className="input" type="datetime-local" disabled={locked && cur?.status !== 'scheduled'} value={when} onChange={(e) => setWhen(e.target.value)} />
@@ -270,7 +280,7 @@ function Composer({ brandId, post, onClose, onSaved }: { brandId: string; post: 
         </div>
         <div className="col" style={{ gap: 8, alignItems: 'center' }}>
           <div className="tabs" style={{ marginBottom: 0 }}>
-            {(['instagram', 'facebook', 'tiktok'] as const).map((n) => (
+            {(['instagram', 'facebook', 'tiktok'] as const).filter((n) => !selAccounts.length || selAccounts.some((a) => a.network === n)).map((n) => (
               <button key={n} className={previewNet === n ? 'on' : ''} onClick={() => setNet(n)}>{NET_LABEL[n]}</button>
             ))}
           </div>
@@ -346,8 +356,25 @@ export function ContentPage() {
   const chip = (p: Post) => {
     const st = POST_STATUS[p.status];
     return (
-      <button key={p.id} className={`cal-chip ${st.tone}`} onClick={() => setOpen({ post: p, brandId: p.brandId })} title={p.caption}>
-        {p.scheduledAt && new Date(p.scheduledAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} {p.targets.map((t) => NET_LABEL[t.network][0]).join('')} · {p.caption.slice(0, 30) || p.type}
+      <button key={p.id} className={`cal-post ${st.tone}`} onClick={() => setOpen({ post: p, brandId: p.brandId })} title={`${st.label} · ${p.caption}`}>
+        <span className="cal-post-top">
+          <span className={`fmt fmt-${p.type}`}>{p.type === 'video' ? <><Clapperboard size={10} /> Reels</> : p.type === 'carousel' ? <><Layers size={10} /> Carrossel</> : <><ImageIcon size={10} /> Imagem</>}</span>
+          <span className="cal-time">{p.scheduledAt && new Date(p.scheduledAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+        </span>
+        <span className="cal-nets">
+          {p.targets.map((t) => {
+            const I = (NET_ICON as Record<string, typeof Film>)[t.network] ?? Film;
+            const s2 = t.status === 'published' ? 'ok' : t.status === 'failed' ? 'err' : t.status === 'publishing' ? 'run' : p.status === 'scheduled' ? 'wait' : 'draft';
+            return (
+              <span key={t.id} className={`net-dot net-${t.network}`} title={`${(NET_LABEL as Record<string, string>)[t.network]}: ${t.status}`}>
+                <I size={11} />
+                <span className={`net-st ${s2}`}>{s2 === 'ok' ? <Check size={7} strokeWidth={4} /> : s2 === 'err' ? <XIcon size={7} strokeWidth={4} /> : s2 === 'wait' ? <Clock size={7} strokeWidth={3} /> : null}</span>
+              </span>
+            );
+          })}
+        </span>
+        {p.status !== 'scheduled' && p.status !== 'published' && p.scheduledAt && Date.parse(p.scheduledAt) > Date.now() && <span className="cal-warn">não agendado · {POST_STATUS[p.status]?.label}</span>}
+        <span className="cal-cap ellipsis">{p.caption.slice(0, 40) || 'sem legenda'}</span>
       </button>
     );
   };
@@ -391,7 +418,8 @@ export function ContentPage() {
               return (
                 <div key={d.toISOString()} className={`cal-day ${d.getMonth() !== month.getMonth() ? 'out' : ''} ${today ? 'today' : ''}`}>
                   <span className="cal-num">{d.getDate()}</span>
-                  {(byDay.get(key(d)) ?? []).map(chip)}
+                  {(byDay.get(key(d)) ?? []).slice(0, 3).map(chip)}
+                  {(byDay.get(key(d)) ?? []).length > 3 && <span className="faint" style={{ fontSize: 11 }}>+{(byDay.get(key(d)) ?? []).length - 3} mais…</span>}
                 </div>
               );
             })}

@@ -351,3 +351,27 @@ input[type='color'] { width: 34px; height: 30px; border: 1px solid var(--border)
 .card.hover { transition: transform .35s cubic-bezier(.23,1,.32,1), border-color .3s, box-shadow .35s; }
 .card.hover:hover { transform: translateY(-3px); border-color: var(--text-3); box-shadow: 0 14px 30px -18px rgba(0,0,0,.8); }
 @media (prefers-reduced-motion: reduce) { .btn, .card.hover, .dash, .ac-line { transition: none !important; animation: none !important; } }
+
+/* Calendário estilo mLabs: formato, redes em círculo e status */
+.cal-post { display: flex; flex-direction: column; gap: 4px; text-align: left; border: 1px solid var(--border); border-left: 3px solid var(--text-3); background: var(--surface-3); border-radius: 8px; padding: 5px 6px; cursor: pointer; color: var(--text); min-width: 0; transition: transform .2s, border-color .2s; }
+.cal-post:hover { transform: translateY(-1px); border-color: var(--text-3); }
+.cal-post.accent { border-left-color: var(--accent); } .cal-post.success { border-left-color: var(--success); } .cal-post.danger { border-left-color: var(--danger); } .cal-post.warning { border-left-color: var(--warning); } .cal-post.info { border-left-color: var(--info); }
+.cal-post-top { display: flex; align-items: center; gap: 4px; }
+.cal-time { margin-left: auto; font-size: 10.5px; font-weight: 700; color: var(--text-2); }
+.fmt { display: inline-flex; align-items: center; gap: 3px; font-size: 9.5px; font-weight: 700; padding: 1px 6px; border-radius: 99px; text-transform: uppercase; letter-spacing: .02em; }
+.fmt-video { background: rgba(238,42,123,.18); color: #ff6aa8; } .fmt-carousel { background: rgba(96,165,250,.18); color: #8cc1ff; } .fmt-image { background: rgba(34,197,94,.18); color: #5fe08f; }
+.cal-nets { display: flex; gap: 4px; flex-wrap: wrap; }
+.net-dot { position: relative; width: 20px; height: 20px; border-radius: 99px; display: inline-grid; place-items: center; color: #fff; flex: none; }
+.net-instagram { background: radial-gradient(circle at 30% 107%, #fdf497 0%, #fd5949 45%, #d6249f 60%, #285AEB 90%); }
+.net-facebook { background: #1877F2; } .net-tiktok { background: #000; box-shadow: inset 0 0 0 1px #444; } .net-youtube { background: #FF0000; } .net-linkedin { background: #0A66C2; }
+.net-st { position: absolute; right: -3px; bottom: -3px; width: 10px; height: 10px; border-radius: 99px; display: grid; place-items: center; border: 1.5px solid var(--surface-3); }
+.net-st.ok { background: var(--success); } .net-st.err { background: var(--danger); } .net-st.wait { background: var(--accent); color: var(--on-accent); } .net-st.run { background: var(--info); } .net-st.draft { display: none; }
+.cal-cap { font-size: 10.5px; color: var(--text-3); }
+
+.net-pick { display: flex; flex-wrap: wrap; gap: 6px; }
+.net-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px 5px 5px; border-radius: 99px; border: 1.5px solid var(--border); background: var(--surface-2); color: var(--text-2); font-size: 12.5px; cursor: pointer; transition: all .25s cubic-bezier(.23,1,.32,1); }
+.net-chip:not(:has(.net-dot)) { padding: 5px 12px; }
+.net-chip:hover:not(:disabled) { border-color: var(--text-3); color: var(--text); }
+.net-chip.on { border-color: var(--accent); background: rgba(255,122,0,.12); color: var(--text); }
+.net-chip:disabled { opacity: .5; cursor: not-allowed; }
+.cal-warn { font-size: 9.5px; font-weight: 700; color: var(--warning); }

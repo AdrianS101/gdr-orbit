@@ -9,7 +9,8 @@ import { graphVersion, MetaError } from './meta.ts';
 import { generateJson } from '../ai/providers.ts';
 import { brandContext } from '../ai/copy.ts';
 import { rowToBrand } from '../lib/mappers.ts';
-import { backgroundAllowed, isAppBlock, metaFetch } from './meta-guard.ts';
+import { backgroundAllowed, isAppBlock, metaFetch, metaHealth } from './meta-guard.ts';
+const metaUsage = () => metaHealth().usage;
 
 const G = () => `https://graph.facebook.com/${graphVersion()}`;
 
@@ -284,7 +285,7 @@ async function fetchConversations(acc: any, token: string) {
   return list;
 }
 
-async function pollAccount(acc: any) {
+async function pollAccount(acc: any, fast = false) {
   const token = unseal(acc.token);
   // 1ª coleta importa os últimos 30 dias como histórico; automações e IA só agem no que chegar depois dela.
   const since = getSetting<string>(`inbox.since.${acc.id}`, new Date(Date.now() - 30 * 86400_000).toISOString());
@@ -344,7 +345,7 @@ async function pollAccount(acc: any) {
     }
   }
   setSetting(`inbox.cc.${acc.id}`, nextSeen);
-  await enrichContacts(acc, token).catch(() => {});
+  if (!fast) await enrichContacts(acc, token).catch(() => {});
   setSetting(`inbox.since.${acc.id}`, started);
   db.prepare('UPDATE social_accounts SET error = NULL WHERE id = ? AND error LIKE ?').run(acc.id, '%mensagens%');
   if (errors.length) console.warn(`[caixa de entrada] ${acc.username ?? acc.name}:`, errors.join(' | '));
@@ -362,14 +363,19 @@ async function enrichContacts(acc: any, token: string) {
 }
 
 let polling = false;
-export async function pollInbox() {
+/** Perfis que precisam responder rápido: automação ativa ou caixa de entrada no modo automático. */
+function needsFast(acc: any): boolean {
+  return !!db.prepare('SELECT 1 FROM automations WHERE account_id = ? AND active = 1').get(acc.id) || getSetting<string>(`inbox.mode.${acc.id}`, 'manual') === 'auto';
+}
+
+export async function pollInbox(fast = false) {
   if (polling || !backgroundAllowed()) return;
   polling = true;
   try {
-    const accs = db.prepare("SELECT * FROM social_accounts WHERE network IN ('instagram','facebook') AND token IS NOT NULL AND status = 'connected'").all() as any[];
+    const accs = (db.prepare("SELECT * FROM social_accounts WHERE network IN ('instagram','facebook') AND token IS NOT NULL AND status = 'connected'").all() as any[]).filter((a) => !fast || needsFast(a));
     for (const a of accs) {
       try {
-        await pollAccount(a);
+        await pollAccount(a, fast);
       } catch (e) {
         if (e instanceof MetaError && /não liberou/.test(e.message)) db.prepare('UPDATE social_accounts SET error = ? WHERE id = ?').run(`${e.message} ${e.hint}`, a.id);
       }
@@ -382,7 +388,15 @@ export async function pollInbox() {
 export function startInbox() {
   // Erros de bloqueio do app não são problema de permissão do perfil: não pedem reconexão.
   db.prepare("UPDATE social_accounts SET error = NULL WHERE error LIKE '%Cannot call API for app%' OR error LIKE '%API access blocked%'").run();
-  // A cada 3 min (antes era 1): bem abaixo do limite de uso da Meta para apps em desenvolvimento.
+  // Completo a cada 3 min. Perfis com automação ativa: a cada 20 s (2 chamadas leves; comentários só quando o total muda),
+  // desacelerando para 60 s se o medidor de uso da Meta passar de 40%.
   setInterval(() => pollInbox().catch(() => {}), 180_000).unref();
+  let last = 0;
+  setInterval(() => {
+    const gap = metaUsage() > 40 ? 60_000 : 20_000;
+    if (Date.now() - last < gap) return;
+    last = Date.now();
+    pollInbox(true).catch(() => {});
+  }, 10_000).unref();
   setTimeout(() => pollInbox().catch(() => {}), 15_000).unref();
 }

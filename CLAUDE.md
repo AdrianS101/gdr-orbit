@@ -164,6 +164,10 @@ Fonte da interface: Inter (variável, empacotada). Ícones: lucide-react.
 - Toda chamada à Graph API passa por `metaFetch`: lê `x-app-usage`/`x-business-use-case-usage` (≥75% pausa 10 min, ≥90% pausa 30 min), códigos de limite (4/17/32/613/800xx) pausam, e "API access blocked"/"Cannot call API for app" = bloqueio do app pela Meta (conta de desenvolvedor precisa de "Confirmar conta" em developers.facebook.com) — nunca marca perfis para reconectar; testa de novo a cada 15 min; aviso no topo da interface.
 - Ocorrido em 2026-10-23: Meta pediu confirmação da conta de desenvolvedor por "atividade incomum". Volume reduzido: caixa de entrada a cada 3 min (era 1), comentários só dos posts cujo total mudou, 3 perfis enriquecidos por rodada.
 
+## Estabilidade
+- `Iniciar GDR Digital.cmd` reinicia o servidor sozinho se ele parar (registro em data/logs/reinicios.log). Erros soltos não derrubam mais o processo: vão para data/logs/erros.log (server/src/lib/crashlog.ts).
+- Automações: perfis com automação ativa (ou caixa no modo automático) são verificados a cada 20 s (60 s se o uso da Meta passar de 40%); os demais a cada 3 min. Resposta instantânea de verdade só com webhook (servidor na nuvem).
+
 ## Etapa 5 (em andamento) — Caixa de entrada e automações
 - server/src/social/inbox.ts: coleta por polling a cada 60 s (sem webhook, pois roda local): conversas (IG/Messenger via /{page}/conversations) e comentários das últimas 15 publicações; contatos e mensagens com anti-duplicidade pelo id externo; registra recebido, sugerido (IA), enviado e falha.
 - Regras da Meta aplicadas no envio: DM só até 24 h após a última mensagem da pessoa; resposta privada a comentário só até 7 dias (shared/automation.ts, com testes).

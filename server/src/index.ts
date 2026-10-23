@@ -6,6 +6,7 @@ import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import { config } from './config.ts';
+import './lib/crashlog.ts';
 import './db.ts';
 import { AppError } from './lib/errors.ts';
 import { authRoutes, isAuthenticated } from './routes/auth.ts';
