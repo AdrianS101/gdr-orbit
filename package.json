@@ -1,0 +1,44 @@
+{
+  "name": "gdr-orbit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "GDR Orbit — Seu conteúdo, sua operação e seus resultados no mesmo lugar.",
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c yellow,cyan \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "node --disable-warning=ExperimentalWarning --watch-path=server --watch-path=shared server/src/index.ts",
+    "dev:web": "vite",
+    "build": "vite build",
+    "start": "node --disable-warning=ExperimentalWarning server/src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --disable-warning=ExperimentalWarning --test tests/*.test.ts",
+    "test:e2e": "node --disable-warning=ExperimentalWarning tests/e2e-flow.ts"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.1.0",
+    "@fastify/cookie": "^11.1.3",
+    "@fastify/multipart": "^10.1.6",
+    "@fastify/static": "^10.1.7",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@huggingface/transformers": "^4.3.1",
+    "fastify": "^5.12.7",
+    "jassub": "^2.5.23",
+    "lucide-react": "^1.61.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.4",
+    "zustand": "^5.0.16"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  }
+}

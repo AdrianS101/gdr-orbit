@@ -1,0 +1,30 @@
+/* Identidade GDR Orbit — paleta inicial (ajustável em Configurações > Identidade visual).
+   Preto/grafite com laranja GDR. Texto sobre laranja é preto para manter contraste AA (8,6:1). */
+:root {
+  --bg: #0b0b0c;
+  --surface-1: #141416;
+  --surface-2: #1c1c1f;
+  --surface-3: #26262b;
+  --border: #2e2e34;
+  --border-strong: #3d3d45;
+  --text: #f4f4f5;
+  --text-2: #a1a1aa;
+  --text-3: #71717a;
+  --accent: #ff7a00;
+  --accent-hover: #ff8f26;
+  --accent-soft: rgba(255, 122, 0, 0.14);
+  --on-accent: #0b0b0c;
+  --success: #22c55e;
+  --warning: #f5b301;
+  --danger: #ef4444;
+  --info: #60a5fa;
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --font: 'Inter Variable', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  color-scheme: dark;
+}

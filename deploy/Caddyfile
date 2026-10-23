@@ -1,0 +1,12 @@
+{$DOMAIN} {
+	request_body {
+		max_size 20GB
+	}
+	reverse_proxy orbit:4310 {
+		flush_interval -1
+		transport http {
+			read_timeout 0
+			write_timeout 0
+		}
+	}
+}

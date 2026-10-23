@@ -1,0 +1,14 @@
+{
+  "name": "GDR Orbit",
+  "short_name": "GDR Orbit",
+  "description": "Seu conteúdo, sua operação e seus resultados no mesmo lugar.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B0B0C",
+  "theme_color": "#0B0B0C",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
