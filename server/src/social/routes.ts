@@ -324,8 +324,11 @@ export async function socialRoutes(app: FastifyInstance) {
     if (!EDITABLE.includes(r.status)) throw new AppError(409, 'Este post não pode ser editado agora.', r.status === 'scheduled' ? 'Cancele o agendamento para editar.' : 'Ele já foi publicado ou está publicando.');
     const b = (req.body ?? {}) as any;
     validatePost({ type: b.type, media: b.media ?? [], targets: b.targets ?? [] }, r.brand_id);
+    // Só volta para revisão se o CONTEÚDO mudou (mídia, texto, capa, perfis). Mudar só a data não desfaz a aprovação.
+    const oldTargets = (db.prepare('SELECT account_id FROM post_targets WHERE post_id = ?').all(id) as any[]).map((t) => t.account_id).sort().join(',');
+    const changed = r.type !== b.type || r.media !== JSON.stringify(b.media) || r.caption !== String(b.caption ?? '').slice(0, 5000) || r.captions !== JSON.stringify(b.captions ?? {}) || (r.cover ?? null) !== cleanCover(b.cover, r.brand_id, b.type) || oldTargets !== [...(b.targets ?? [])].sort().join(',');
     db.prepare('UPDATE posts SET type = ?, media = ?, caption = ?, captions = ?, scheduled_at = ?, timezone = ?, cover = ?, status = ?, updated_at = ? WHERE id = ?').run(
-      b.type, JSON.stringify(b.media), String(b.caption ?? '').slice(0, 5000), JSON.stringify(b.captions ?? {}), b.scheduledAt ?? null, b.timezone ?? r.timezone, cleanCover(b.cover, r.brand_id, b.type), r.status === 'approved' || r.status === 'failed' ? 'review' : r.status, now(), id,
+      b.type, JSON.stringify(b.media), String(b.caption ?? '').slice(0, 5000), JSON.stringify(b.captions ?? {}), b.scheduledAt ?? null, b.timezone ?? r.timezone, cleanCover(b.cover, r.brand_id, b.type), changed && (r.status === 'approved' || r.status === 'failed') ? 'review' : r.status, now(), id,
     );
     setTargets(id, b.targets ?? []);
     return rowToPost(db.prepare('SELECT * FROM posts WHERE id = ?').get(id));
