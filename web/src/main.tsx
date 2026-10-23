@@ -17,6 +17,8 @@ import { LibraryPage } from './pages/Library.tsx';
 import { PlannedPage } from './pages/Planned.tsx';
 import { ContentPage } from './pages/Content.tsx';
 import { ResultsPage } from './pages/Results.tsx';
+import { InboxPage } from './pages/Inbox.tsx';
+import { AutomationsPage } from './pages/Automations.tsx';
 import { SettingsPage, applyTheme } from './pages/Settings.tsx';
 import { EditorPage } from './editor/EditorPage.tsx';
 
@@ -58,8 +60,8 @@ function App() {
         <Route path="/projetos" element={<ProjectsPage />} />
         <Route path="/biblioteca" element={<LibraryPage />} />
         <Route path="/conteudo" element={<ContentPage />} />
-        <Route path="/caixa-de-entrada" element={<PlannedPage area="inbox" />} />
-        <Route path="/automacoes" element={<PlannedPage area="automacoes" />} />
+        <Route path="/caixa-de-entrada" element={<InboxPage />} />
+        <Route path="/automacoes" element={<AutomationsPage />} />
         <Route path="/resultados" element={<ResultsPage />} />
         <Route path="/configuracoes" element={<SettingsPage />} />
         <Route path="*" element={<PlannedPage area="404" />} />

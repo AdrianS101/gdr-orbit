@@ -5,7 +5,7 @@ import path from 'node:path';
 import { getSetting } from '../db.ts';
 import { readSecrets } from '../ai/providers.ts';
 
-export const META_SCOPES = ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts', 'instagram_basic', 'instagram_content_publish', 'business_management', 'instagram_manage_insights', 'read_insights', 'ads_read'];
+export const META_SCOPES = ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts', 'instagram_basic', 'instagram_content_publish', 'business_management', 'instagram_manage_insights', 'read_insights', 'ads_read', 'instagram_manage_messages', 'instagram_manage_comments', 'pages_messaging', 'pages_read_user_content', 'pages_manage_engagement'];
 
 export function graphVersion() {
   return getSetting<string>('meta.version', 'v23.0');

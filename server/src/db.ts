@@ -97,6 +97,34 @@ const migrations: string[] = [
   CREATE INDEX idx_media_posted ON media_items(account_id, posted_at);
   CREATE TABLE insight_cache (key TEXT PRIMARY KEY, data TEXT NOT NULL, fetched_at TEXT NOT NULL);
   `,
+  `
+  CREATE TABLE contacts (
+    id TEXT PRIMARY KEY, brand_id TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL REFERENCES social_accounts(id) ON DELETE CASCADE,
+    network TEXT NOT NULL, external_id TEXT NOT NULL, username TEXT, name TEXT, avatar TEXT,
+    tags TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'open', paused INTEGER NOT NULL DEFAULT 0,
+    conversation_id TEXT, last_message_at TEXT, last_inbound_at TEXT, unread INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL, UNIQUE (account_id, external_id)
+  );
+  CREATE INDEX idx_contacts_brand ON contacts(brand_id, last_message_at);
+  CREATE TABLE messages (
+    id TEXT PRIMARY KEY, contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    direction TEXT NOT NULL, kind TEXT NOT NULL, external_id TEXT, text TEXT NOT NULL DEFAULT '',
+    context TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL, author TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX idx_messages_ext ON messages(contact_id, external_id) WHERE external_id IS NOT NULL;
+  CREATE INDEX idx_messages_contact ON messages(contact_id, created_at);
+  CREATE TABLE automations (
+    id TEXT PRIMARY KEY, brand_id TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL REFERENCES social_accounts(id) ON DELETE CASCADE,
+    name TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0, config TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  );
+  CREATE TABLE automation_runs (
+    id TEXT PRIMARY KEY, automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
+    trigger_id TEXT NOT NULL, contact_id TEXT, step TEXT NOT NULL, status TEXT NOT NULL, detail TEXT, created_at TEXT NOT NULL,
+    UNIQUE (automation_id, trigger_id, step)
+  );
+  `,
 ];
 
 db.exec('CREATE TABLE IF NOT EXISTS _migrations (n INTEGER PRIMARY KEY)');

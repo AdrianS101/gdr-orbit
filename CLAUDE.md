@@ -140,6 +140,14 @@ Fonte da interface: Inter (variável, empacotada). Ícones: lucide-react.
 - Relatório padrão GDR: espaço reservado, aguardando o modelo do usuário.
 - PWA: manifest + service worker mínimo + ícones GDR (instalável no celular).
 
+## Etapa 5 (em andamento) — Caixa de entrada e automações
+- server/src/social/inbox.ts: coleta por polling a cada 60 s (sem webhook, pois roda local): conversas (IG/Messenger via /{page}/conversations) e comentários das últimas 15 publicações; contatos e mensagens com anti-duplicidade pelo id externo; registra recebido, sugerido (IA), enviado e falha.
+- Regras da Meta aplicadas no envio: DM só até 24 h após a última mensagem da pessoa; resposta privada a comentário só até 7 dias (shared/automation.ts, com testes).
+- Automações comentário→DM (shared/automation.ts + inbox-routes.ts): palavras-chave (ignora acento/maiúscula/emoji), publicações escolhidas ou todas, resposta pública alternada, DM com {nome} e link, pergunta de continuidade com respostas por palavra; uma DM por pessoa por automação; histórico (automation_runs) e teste simulado que não envia nada.
+- IA nas respostas: só usa perfil e base de conhecimento da marca; needsHuman manda a conversa para "Precisa de você". Modo por perfil: manual (só sugere) ou automático (envia o que souber). Pausa de automação por contato.
+- Permissões adicionadas no app Meta: instagram_manage_messages, instagram_manage_comments, pages_read_user_content, pages_manage_engagement e pages_messaging (caso de uso Messenger). Usuário precisa reconectar e ativar "Permitir acesso a mensagens" no Instagram.
+- Pendente: validação com contas reais após reconexão; webhooks quando estiver na nuvem.
+
 ## Dependências e limitações conhecidas
 
 - **IA para texto do post**: precisa de (a) login no Claude Code deste computador (`claude` no terminal, uma vez) **ou** (b) chave da API Anthropic em Configurações → IA. Sem isso a geração mostra o erro e como resolver. *Validado em 2026-10-22 com o Claude Code logado (opus): texto gerado só com base na fala real, com alertas do que não inventou.*

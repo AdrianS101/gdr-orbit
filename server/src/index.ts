@@ -21,6 +21,8 @@ import { socialRoutes, publishHandler, startScheduler } from './social/routes.ts
 import { driveRoutes, driveImportHandler, startDriveWatcher } from './drive.ts';
 import { resultsRoutes } from './social/results-routes.ts';
 import { metricsHandler } from './social/insights.ts';
+import { inboxRoutes } from './social/inbox-routes.ts';
+import { startInbox } from './social/inbox.ts';
 
 const app = Fastify({
   trustProxy: true,
@@ -54,6 +56,7 @@ await app.register(systemRoutes);
 await app.register(socialRoutes);
 await app.register(driveRoutes);
 await app.register(resultsRoutes);
+await app.register(inboxRoutes);
 
 // Interface compilada (produção). Em desenvolvimento o Vite serve a interface.
 if (fs.existsSync(path.join(config.webDist, 'index.html'))) {
@@ -74,6 +77,7 @@ registerJob('metrics', metricsHandler, 1);
 startQueue();
 startScheduler();
 startDriveWatcher();
+startInbox();
 
 await app.listen({ host: config.host, port: config.port });
 console.log(`\n  GDR Orbit rodando em http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}`);

@@ -13,8 +13,8 @@ const NAV = [
   { to: '/biblioteca', icon: FolderOpen, label: 'Biblioteca' },
   { sep: true },
   { to: '/conteudo', icon: CalendarDays, label: 'Conteúdo e calendário' },
-  { to: '/caixa-de-entrada', icon: Inbox, label: 'Caixa de entrada', soon: 'Etapa 5' },
-  { to: '/automacoes', icon: Workflow, label: 'Automações', soon: 'Etapa 5' },
+  { to: '/caixa-de-entrada', icon: Inbox, label: 'Caixa de entrada' },
+  { to: '/automacoes', icon: Workflow, label: 'Automações' },
   { to: '/resultados', icon: BarChart3, label: 'Resultados' },
 ] as const;
 
@@ -168,7 +168,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <NavLink key={n.to} to={n.to} end={'end' in n} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
               <n.icon size={18} />
               <span>{n.label}</span>
-              {'soon' in n && <span className="soon">{n.soon}</span>}
+              {'soon' in n && <span className="soon">{String((n as { soon?: string }).soon)}</span>}
             </NavLink>
           ),
         )}
