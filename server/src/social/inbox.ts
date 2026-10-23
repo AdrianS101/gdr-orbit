@@ -185,13 +185,52 @@ async function autoReply(acc: any, contact: any) {
 
 // ---------- coleta ----------
 
+/** Conversas em lotes pequenos: a Meta recusa pedidos grandes ("reduce the amount of data"). */
+async function fetchConversations(acc: any, token: string) {
+  const platform = acc.network === 'instagram' ? 'instagram' : 'messenger';
+  try {
+    return (await call('GET', `${acc.page_id}/conversations`, { platform, fields: 'id,updated_time,participants,messages.limit(10){id,message,from,created_time}', limit: '10' }, token)).data ?? [];
+  } catch (e) {
+    if (!(e instanceof MetaError) || !/reduce the amount of data|timeout|time out|unknown error/i.test(e.message)) throw e;
+  }
+  // Caixas grandes: lista as conversas sem mensagens e busca as mensagens de cada uma separadamente.
+  // Páginas de 2 em 2 (a Meta recusa lotes maiores em caixas com muitas mensagens).
+  const list: any[] = [];
+  let after = '';
+  for (let page = 0; page < 5; page++) {
+    const r = await call('GET', `${acc.page_id}/conversations`, { platform, fields: 'id,updated_time,participants', limit: '2', ...(after ? { after } : {}) }, token).catch(() => null);
+    if (!r) break;
+    list.push(...(r.data ?? []));
+    after = r.paging?.cursors?.after ?? '';
+    if (!after || !r.paging?.next) break;
+  }
+  for (const cv of list) {
+    try {
+      cv.messages = await call('GET', `${cv.id}/messages`, { fields: 'id,message,from,created_time', limit: '10' }, token);
+    } catch {
+      cv.messages = { data: [] };
+    }
+  }
+  return list;
+}
+
 async function pollAccount(acc: any) {
   const token = unseal(acc.token);
-  const since = getSetting<string>(`inbox.since.${acc.id}`, new Date(Date.now() - 3 * 86400_000).toISOString());
+  // 1ª coleta importa os últimos 30 dias como histórico; automações e IA só agem no que chegar depois dela.
+  const since = getSetting<string>(`inbox.since.${acc.id}`, new Date(Date.now() - 30 * 86400_000).toISOString());
+  const live = getSetting<string | null>(`inbox.live.${acc.id}`, null) ?? now();
+  setSetting(`inbox.live.${acc.id}`, live);
   const started = now();
+  const errors: string[] = [];
   // Mensagens diretas
-  const conv = await call('GET', `${acc.page_id}/conversations`, { platform: acc.network === 'instagram' ? 'instagram' : 'messenger', fields: 'id,updated_time,participants,messages.limit(15){id,message,from,created_time}', limit: '25' }, token);
-  for (const cv of conv.data ?? []) {
+  let conv: any[] = [];
+  try {
+    conv = await fetchConversations(acc, token);
+  } catch (e) {
+    if (e instanceof MetaError && /não liberou/.test(e.message)) throw e;
+    errors.push(`Directs: ${(e as Error).message}`);
+  }
+  for (const cv of conv) {
     if (cv.updated_time < since) continue;
     const other = (cv.participants?.data ?? []).find((p: any) => p.id !== acc.external_id && p.id !== acc.page_id);
     if (!other) continue;
@@ -199,17 +238,22 @@ async function pollAccount(acc: any) {
     for (const m of [...(cv.messages?.data ?? [])].reverse()) {
       const inbound = m.from?.id === other.id;
       const isNew = addMessage(contact.id, { direction: inbound ? 'in' : 'out', kind: 'dm', externalId: m.id, text: m.message ?? '(mídia)', status: inbound ? 'received' : 'sent', author: inbound ? 'contact' : 'human', at: m.created_time });
-      if (isNew && inbound && m.created_time >= since) {
+      if (isNew && inbound && m.created_time >= live) {
         const fresh = db.prepare('SELECT * FROM contacts WHERE id = ?').get(contact.id) as any;
         if (!(await onFollowUp(acc, fresh, m.id, m.message ?? ''))) await autoReply(acc, fresh);
       }
     }
   }
   // Comentários nas publicações recentes
-  const media =
-    acc.network === 'instagram'
-      ? (await call('GET', `${acc.external_id}/media`, { fields: 'id,timestamp', limit: '15' }, token)).data ?? []
-      : (await call('GET', `${acc.external_id}/published_posts`, { fields: 'id,created_time', limit: '15' }, token)).data ?? [];
+  let media: any[] = [];
+  try {
+    media =
+      acc.network === 'instagram'
+        ? (await call('GET', `${acc.external_id}/media`, { fields: 'id,timestamp', limit: '15' }, token)).data ?? []
+        : (await call('GET', `${acc.external_id}/published_posts`, { fields: 'id,created_time', limit: '15' }, token)).data ?? [];
+  } catch (e) {
+    errors.push(`Comentários: ${(e as Error).message}`);
+  }
   for (const md of media) {
     const fields = acc.network === 'instagram' ? 'id,text,timestamp,username,from' : 'id,message,created_time,from';
     const cm = await call('GET', `${md.id}/comments`, { fields, limit: '50' }, token).catch(() => ({ data: [] }));
@@ -220,11 +264,12 @@ async function pollAccount(acc: any) {
       if (fromId === acc.external_id || fromId === acc.page_id) continue;
       const contact = upsertContact(acc, fromId, { username: c.username ?? c.from?.username ?? null, name: c.from?.name ?? null });
       const isNew = addMessage(contact.id, { direction: 'in', kind: 'comment', externalId: c.id, text, context: { mediaId: md.id }, status: 'received', author: 'contact', at });
-      if (isNew && at >= since) await onComment(acc, db.prepare('SELECT * FROM contacts WHERE id = ?').get(contact.id), { id: c.id, text, at, mediaId: md.id });
+      if (isNew && at >= live) await onComment(acc, db.prepare('SELECT * FROM contacts WHERE id = ?').get(contact.id), { id: c.id, text, at, mediaId: md.id });
     }
   }
   setSetting(`inbox.since.${acc.id}`, started);
   db.prepare('UPDATE social_accounts SET error = NULL WHERE id = ? AND error LIKE ?').run(acc.id, '%mensagens%');
+  if (errors.length) console.warn(`[caixa de entrada] ${acc.username ?? acc.name}:`, errors.join(' | '));
 }
 
 let polling = false;
