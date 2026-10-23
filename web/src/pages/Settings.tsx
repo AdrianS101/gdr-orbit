@@ -171,7 +171,7 @@ export function SettingsPage() {
               {p.id === 'gemini' && (
                 <Field label="Chave do Gemini" help={<>Grátis: entre em <b>aistudio.google.com</b> com sua conta Google, clique em "Get API key" → "Create API key" e cole aqui. Fica guardada só neste computador.</>}>
                   <div className="row">
-                    <input className="input mono" type="password" autoComplete="off" placeholder={p.configured ? 'Substituir chave atual' : 'AIza…'} value={gkey} onChange={(e) => setGkey(e.target.value)} />
+                    <input className="input mono" type="password" autoComplete="off" placeholder={p.configured ? 'Substituir chave atual' : 'AIza… ou AQ.…'} value={gkey} onChange={(e) => setGkey(e.target.value)} />
                     <button className="btn sm" disabled={!gkey} onClick={() => saveGemini(gkey)}><KeyRound size={14} /> Salvar</button>
                     {p.configured && <button className="btn ghost sm" onClick={() => saveGemini(null)}>Remover</button>}
                   </div>

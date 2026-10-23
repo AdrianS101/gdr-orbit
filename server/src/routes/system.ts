@@ -111,7 +111,9 @@ export async function systemRoutes(app: FastifyInstance) {
 
   app.put('/api/settings/ai/gemini-key', async (req) => {
     const { key } = (req.body ?? {}) as { key?: string | null };
-    if (key && !/^AIza[0-9A-Za-z_-]{30,}$/.test(key.trim())) throw badRequest('Essa não é uma chave do Gemini.', key.trim().startsWith('GOCSPX') ? 'Isso é a chave secreta do Google Drive. A chave do Gemini começa com "AIza": copie em aistudio.google.com → Chaves de API.' : 'A chave do Gemini começa com "AIza". Copie em aistudio.google.com → Chaves de API.');
+    // Formatos do Google: antigo (AIza…) e novo (AQ.…). A chave secreta do Drive (GOCSPX-…) não serve aqui.
+    const k = (key ?? '').trim();
+    if (k && (k.startsWith('GOCSPX') || !/^(AIza[0-9A-Za-z_-]{30,}|AQ.[0-9A-Za-z._-]{20,})$/.test(k))) throw badRequest('Essa não é uma chave do Gemini.', k.startsWith('GOCSPX') ? 'Isso é a chave secreta do Google Drive. Copie a chave do Gemini em aistudio.google.com → Chaves de API (começa com "AIza" ou "AQ.").' : 'A chave do Gemini começa com "AIza" ou "AQ.". Copie em aistudio.google.com → Chaves de API.');
     setSecret('GEMINI_API_KEY', key ? key.trim() : null);
     return { ok: true };
   });
