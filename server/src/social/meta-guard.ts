@@ -22,6 +22,17 @@ export function metaHealth(): MetaHealth {
   return health;
 }
 
+let lastProbe = 0;
+/** Com o aviso de bloqueio na tela, confirma de novo com uma chamada só (no máximo a cada 2 min) e limpa assim que a Meta liberar. */
+export async function recheckBlock(probe: () => Promise<void>): Promise<MetaHealth> {
+  if (health.blocked && Date.now() - lastProbe > 120_000) {
+    lastProbe = Date.now();
+    await probe().catch(() => {});
+    if (!health.blocked) blockRetryAt = 0;
+  }
+  return health;
+}
+
 /** Tarefas em segundo plano (caixa de entrada, métricas, Drive) só rodam se a Meta estiver liberada e com folga. */
 export function backgroundAllowed(): boolean {
   if (health.blocked && Date.now() < blockRetryAt) return false;

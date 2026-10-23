@@ -13,8 +13,8 @@ import { seal, unseal } from '../lib/vault.ts';
 import { readSecrets, setSecret } from '../ai/providers.ts';
 import { enqueue, type JobContext } from '../jobs/queue.ts';
 import { uid } from '../../../shared/timeline.ts';
-import { metaHealth } from './meta-guard.ts';
-import { exchangeAndList, metaApp, MetaError, oauthUrl, publishFacebook, publishInstagram, verifyAccount, type MetaCandidate, type PublishFile } from './meta.ts';
+import { metaFetch, recheckBlock } from './meta-guard.ts';
+import { exchangeAndList, graphVersion, metaApp, MetaError, oauthUrl, publishFacebook, publishInstagram, verifyAccount, type MetaCandidate, type PublishFile } from './meta.ts';
 
 const EDITABLE = ['draft', 'review', 'approved', 'failed'];
 const pending = new Map<string, { brandId: string; at: number; candidates?: MetaCandidate[]; userToken?: string; expiresIn?: number | null; error?: string }>();
@@ -269,7 +269,12 @@ export async function socialRoutes(app: FastifyInstance) {
   });
 
   // Mídias publicáveis: vídeos exportados + imagens/vídeos da biblioteca.
-  app.get('/api/social/meta-health', async () => metaHealth());
+  app.get('/api/social/meta-health', async () =>
+    recheckBlock(async () => {
+      const a = db.prepare("SELECT * FROM social_accounts WHERE token IS NOT NULL AND status = 'connected' AND network IN ('instagram','facebook') LIMIT 1").get() as any;
+      if (a) await metaFetch(`https://graph.facebook.com/${graphVersion()}/${a.external_id}?fields=id&access_token=${unseal(a.token)}`);
+    }),
+  );
 
   app.get('/api/social/media', async (req) => {
     const { brandId } = req.query as { brandId: string };
