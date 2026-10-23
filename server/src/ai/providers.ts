@@ -202,6 +202,8 @@ async function anthropicJson<T>(req: JsonRequest): Promise<JsonResult<T>> {
 // ---------- Google Gemini (gratuito até o limite diário) ----------
 
 export const GEMINI_DEFAULT = 'gemini-flash-latest';
+/** Modelos que ficaram sobrecarregados: são pulados por 10 minutos para não esperar à toa. */
+const geminiBusy = new Map<string, number>();
 const GEMINI_FALLBACKS = ['gemini-flash-latest', 'gemini-3-flash-preview', 'gemini-flash-lite-latest'];
 
 function geminiKey(): string | null {
@@ -243,7 +245,8 @@ async function geminiJson<T>(req: JsonRequest): Promise<JsonResult<T>> {
   const body = {
     systemInstruction: { parts: [{ text: req.system }] },
     contents: [{ role: 'user', parts: [{ text: req.prompt }] }],
-    generationConfig: { responseMimeType: 'application/json', responseJsonSchema: req.schema, maxOutputTokens: req.maxTokens ?? 8192 },
+    // Piso de 4096: os modelos novos raciocinam antes de responder e esse raciocínio consome o limite.
+    generationConfig: { responseMimeType: 'application/json', responseJsonSchema: req.schema, maxOutputTokens: Math.max(4096, req.maxTokens ?? 8192) },
   };
   // Modelo configurado → estável → mais novo disponível. Modelo sobrecarregado (503) ou com cota
   // esgotada (429) faz o sistema tentar de novo e, se continuar, usar o próximo da lista.
@@ -253,11 +256,13 @@ async function geminiJson<T>(req: JsonRequest): Promise<JsonResult<T>> {
   try {
     for (let i = 0; i < candidates.length; i++) {
       const m = candidates[i];
+      if ((geminiBusy.get(m) ?? 0) > Date.now() && i < candidates.length - 1) continue;
       for (let attempt = 0; attempt < 2; attempt++) {
         res = await geminiCall(m, key, body);
         if (res.status !== 503 && res.status !== 500) break;
         await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
       }
+      if ([500, 503, 504].includes(res!.status)) geminiBusy.set(m, Date.now() + 10 * 60_000);
       if (res!.status === 404) {
         if (i === 0) configuredMissing = true;
         if (i === candidates.length - 1) {
