@@ -111,7 +111,7 @@ export async function systemRoutes(app: FastifyInstance) {
 
   app.put('/api/settings/ai/gemini-key', async (req) => {
     const { key } = (req.body ?? {}) as { key?: string | null };
-    if (key && !/^[A-Za-z0-9_-]{30,}$/.test(key.trim())) throw badRequest('Essa não parece ser uma chave válida do Gemini.', 'Copie a chave completa em aistudio.google.com (Get API key).');
+    if (key && !/^AIza[0-9A-Za-z_-]{30,}$/.test(key.trim())) throw badRequest('Essa não é uma chave do Gemini.', key.trim().startsWith('GOCSPX') ? 'Isso é a chave secreta do Google Drive. A chave do Gemini começa com "AIza": copie em aistudio.google.com → Chaves de API.' : 'A chave do Gemini começa com "AIza". Copie em aistudio.google.com → Chaves de API.');
     setSecret('GEMINI_API_KEY', key ? key.trim() : null);
     return { ok: true };
   });
