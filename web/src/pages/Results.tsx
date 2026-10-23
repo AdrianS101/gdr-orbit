@@ -1,12 +1,13 @@
 // Resultados: métricas reais do Instagram/Facebook por período, ranking de conteúdos e tráfego pago.
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, ExternalLink, Download, BarChart3, FileText, TrendingUp, TrendingDown, Megaphone } from 'lucide-react';
+import { RefreshCw, ExternalLink, Download, BarChart3, FileText, TrendingUp, TrendingDown, Megaphone, Upload } from 'lucide-react';
 import { api } from '../lib/api.ts';
 import { useApp, showError, onJob } from '../lib/store.ts';
 import { Empty, Field, Spinner } from '../components/ui.tsx';
 import { fmtDateTime, fmtRelative } from '../lib/format.ts';
 import { ProfileAnalysis, AskData, Competitors, Ideas } from './Intelligence.tsx';
+import { MetricsImportModal, type ImportBatch } from './MetricsImport.tsx';
 
 const LABEL: Record<string, string> = {
   views: 'Visualizações',
@@ -41,7 +42,8 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 interface Data {
   accounts: { id: string; network: string; name: string; avatar: string | null; totals: Record<string, number | null>; prev: Record<string, number | null>; notes: string[]; fetchedAt: string | null; error: string | null; warning?: string | null }[];
-  media: { id: string; externalId: string; network: string; type: string; caption: string; permalink: string; thumb: string | null; postedAt: string; metrics: Record<string, number>; account: string }[];
+  media: { id: string; externalId: string; network: string; type: string; caption: string; permalink: string; thumb: string | null; postedAt: string; metrics: Record<string, number>; account: string; source?: string; importBatch?: string | null }[];
+  imports?: ImportBatch[];
   ads: { configured: boolean; adAccount?: string; items: any[]; error: string | null; fetchedAt: string | null };
   lastSync: string | null;
 }
@@ -57,6 +59,7 @@ export function ResultsPage() {
   const [sort, setSort] = useState('views');
   const [adAccounts, setAdAccounts] = useState<any[] | null>(null);
   const [tab, setTab] = useState('painel');
+  const [importing, setImporting] = useState(false);
 
   const load = () => {
     if (!brandId) return;
@@ -114,6 +117,7 @@ export function ResultsPage() {
         <div className="actions">
           <button className="btn" onClick={sync}><RefreshCw size={16} /> Atualizar dados</button>
           <button className="btn" disabled={!ranked.length} onClick={exportCsv}><Download size={16} /> Exportar CSV</button>
+          <button className="btn" onClick={() => setImporting(true)} title="Para redes sem conexão (ex.: TikTok) ou números de outra ferramenta"><Upload size={16} /> Importar planilha</button>
         </div>
       </div>
 
@@ -177,7 +181,7 @@ export function ResultsPage() {
         </section>
       ))}
 
-      {data && data.accounts.length > 0 && (
+      {data && (data.accounts.length > 0 || data.media.length > 0) && (
         <section className="card col" style={{ gap: 10, marginBottom: 16 }}>
           <div className="row wrap">
             <h2 style={{ margin: 0 }}>Conteúdos que mais performaram</h2>
@@ -202,6 +206,7 @@ export function ResultsPage() {
                     <div className="row wrap small" style={{ gap: 6 }}>
                       <span className="badge">{m.type}</span>
                       <span className="faint">{m.account} · {fmtDateTime(m.postedAt)}</span>
+                      {m.source === 'manual' && <span className="badge info" title={(() => { const b = data?.imports?.find((x) => x.id === m.importBatch); return b ? `Arquivo ${b.file}, importado em ${fmtDateTime(b.createdAt)}` : 'Importado de planilha'; })()}>Importado manualmente · {m.network}</span>}
                       {paid ? <span className="badge warning"><Megaphone size={11} /> Impulsionado · R$ {paid.reduce((n, x) => n + x.spend, 0).toFixed(2)}</span> : <span className="badge">Orgânico</span>}
                     </div>
                     <div className="ellipsis small" style={{ marginTop: 4 }}>{m.caption || '(sem legenda)'}</div>
@@ -277,6 +282,7 @@ export function ResultsPage() {
         <span className="muted small">Aguardando o modelo de relatório que você vai desenvolver. Quando o padrão estiver definido, os dados desta tela serão montados nele automaticamente para enviar ao cliente.</span>
       </section>
       </>)}
+      {importing && brandId && <MetricsImportModal brandId={brandId} imports={data?.imports ?? []} onClose={() => setImporting(false)} onDone={load} />}
     </>
   );
 }

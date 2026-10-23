@@ -55,6 +55,12 @@ export interface DisplayCue {
 /** Calcula quando cada legenda aparece na timeline atual. */
 export function mapCuesToTimeline(tl: Timeline): DisplayCue[] {
   const placed = layoutClips(tl.clips);
+  // Na transição cruzada os dois trechos aparecem juntos: a legenda passa de um para o outro no meio da sobreposição.
+  const win = placed.map((p, i) => {
+    const prev = placed[i - 1];
+    const next = placed[i + 1];
+    return { lo: prev && prev.end > p.start ? (p.start + prev.end) / 2 : -Infinity, hi: next && next.start < p.end ? (next.start + p.end) / 2 : Infinity };
+  });
   const out: DisplayCue[] = [];
   for (const cue of tl.captions.cues) {
     // agrupa por ocorrência de trecho (um trecho duplicado mostra a legenda duas vezes)
@@ -65,6 +71,8 @@ export function mapCuesToTimeline(tl: Timeline): DisplayCue[] {
         if (p.clip.assetId !== cue.assetId || mid < p.clip.in || mid >= p.clip.out) continue;
         const s = Math.max(w.s, p.clip.in);
         const e = Math.min(w.e, p.clip.out);
+        const tm = p.start + (mid - p.clip.in) / p.clip.speed;
+        if (tm < win[p.index].lo || tm >= win[p.index].hi) continue;
         const g = groups.get(p.index) ?? [];
         g.push({ text: w.text, start: p.start + (s - p.clip.in) / p.clip.speed, end: p.start + (e - p.clip.in) / p.clip.speed, index });
         groups.set(p.index, g);

@@ -76,3 +76,20 @@ test('cortes deslocam as faixas livres e a IA cria PiP/B-roll/redução de ruíd
   assert.equal(br.volume, 0);
   assert.equal(applyAction(tl, { type: 'denoise', level: 'strong' }, ctx).timeline.clips[0].denoise, 'strong');
 });
+
+import { layoutClips, overlapOf, timelineDuration } from '../shared/timeline.ts';
+import { clipFx, crossAt } from '../shared/effects.ts';
+
+test('transição cruzada: o trecho seguinte começa antes e o vídeo encurta', () => {
+  const tl = emptyTimeline('9:16');
+  const c = (id: string, d: number, tr?: any) => ({ id, assetId: 'v', in: 0, out: d, speed: 1, volume: 1, fit: 'cover' as const, focusX: 0.5, focusY: 0.5, ...(tr ? { transition: tr } : {}) });
+  tl.clips = [c('a', 4), c('b', 4, { type: 'dissolve', duration: 1 }), c('c', 1, { type: 'slide', duration: 2 })];
+  const p = layoutClips(tl.clips);
+  assert.deepEqual(p.map((x) => [x.start, x.end]), [[0, 4], [3, 7], [6.5, 7.5]]); // sobreposição limitada a metade do trecho
+  assert.equal(overlapOf(tl.clips, 2), 0.5);
+  assert.equal(timelineDuration(tl), 7.5);
+  assert.equal(clipFx(tl.clips, 1).head, null); // sem escurecer: é cruzada
+  assert.equal(crossAt('dissolve', 0.25).in.opacity, 0.25);
+  assert.equal(crossAt('wipe', 0.5).in.clip, 'inset(0 0 0 50.000%)');
+  assert.deepEqual([crossAt('slide', 0.25).out.tx, crossAt('slide', 0.25).in.tx], [-25, 75]);
+});

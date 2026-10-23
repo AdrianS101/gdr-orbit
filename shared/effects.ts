@@ -1,7 +1,7 @@
 // Efeitos com a MESMA matemática na prévia (CSS/SVG) e na exportação (FFmpeg):
 // filtros de cor, zoom animado, transições, ducking da música e remoção de pausas.
 import type { CaptionWord, ColorAdjust, Timeline, TransitionType, VideoClip } from './types.ts';
-import { clipDuration, layoutClips, rippleDelete } from './timeline.ts';
+import { clipDuration, layoutClips, OVERLAP_TRANSITIONS, rippleDelete } from './timeline.ts';
 import { mapCuesToTimeline } from './captions.ts';
 
 // ---------- Filtros de cor ----------
@@ -59,7 +59,17 @@ export function colorSvg(c: ColorAdjust): { slope: number; intercept: number; ma
 
 // ---------- Zoom e transições ----------
 
-export const TRANSITIONS: Record<TransitionType, string> = { fade: 'Escurecer', flash: 'Flash branco', zoom: 'Zoom' };
+export const TRANSITIONS: Record<TransitionType, string> = { fade: 'Escurecer', flash: 'Flash branco', zoom: 'Zoom', dissolve: 'Dissolver (cruzada)', wipe: 'Cortina (cruzada)', slide: 'Deslizar (cruzada)' };
+/** Nome no filtro xfade do FFmpeg. */
+export const XFADE: Record<string, string> = { dissolve: 'fade', wipe: 'wipeleft', slide: 'slideleft' };
+
+/** Transição cruzada no instante t: u (0..1) e como desenhar o trecho que sai e o que entra (prévia ⇔ xfade). */
+export function crossAt(type: TransitionType, u: number): { out: { opacity: number; clip: string; tx: number }; in: { opacity: number; clip: string; tx: number } } {
+  const k = Math.min(1, Math.max(0, u));
+  if (type === 'wipe') return { out: { opacity: 1, clip: 'none', tx: 0 }, in: { opacity: 1, clip: `inset(0 0 0 ${((1 - k) * 100).toFixed(3)}%)`, tx: 0 } };
+  if (type === 'slide') return { out: { opacity: 1, clip: 'none', tx: -k * 100 }, in: { opacity: 1, clip: 'none', tx: (1 - k) * 100 } };
+  return { out: { opacity: 1, clip: 'none', tx: 0 }, in: { opacity: k, clip: 'none', tx: 0 } };
+}
 const ZOOM_PUNCH = 0.3;
 
 export interface ClipFx {
@@ -73,7 +83,7 @@ export function clipFx(clips: VideoClip[], i: number): ClipFx {
   const c = clips[i];
   const D = clipDuration(c);
   const next = clips[i + 1];
-  const half = (t?: { type: TransitionType; duration: number }, maxD = D) => (t ? { type: t.type, d: Math.min(t.duration / 2, maxD / 2) } : null);
+  const half = (t?: { type: TransitionType; duration: number }, maxD = D) => (t && !OVERLAP_TRANSITIONS.has(t.type) ? { type: t.type, d: Math.min(t.duration / 2, maxD / 2) } : null);
   return { D, head: i > 0 ? half(c.transition) : null, tail: next ? half(next.transition, Math.min(D, clipDuration(next))) : null };
 }
 

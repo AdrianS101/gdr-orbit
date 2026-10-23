@@ -30,7 +30,7 @@ const SCHEMA = {
           text: { type: 'string' },
           kind: { type: 'string', enum: ['title', 'lower', 'cta'] },
           anim: { type: 'string', enum: ['fade', 'pop', 'slide', 'none'] },
-          transition: { type: 'string', enum: ['fade', 'flash', 'zoom'] },
+          transition: { type: 'string', enum: ['fade', 'flash', 'zoom', 'dissolve', 'wipe', 'slide'] },
           scale: { type: 'number' },
           speed: { type: 'number' },
           assetId: { type: 'string' },

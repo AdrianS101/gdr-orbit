@@ -69,6 +69,7 @@ export function EffectsPanel() {
             </button>
           ))}
         </div>
+        <span className="faint small">As transições "cruzadas" mostram os dois trechos ao mesmo tempo e encurtam o vídeo pela duração da transição.</span>
       </Field>
       {clip?.transition && (
         <Field label={`Duração da transição: ${clip.transition.duration.toFixed(1)}s`}>

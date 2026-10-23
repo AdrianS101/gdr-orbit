@@ -83,13 +83,23 @@ export interface PlacedClip {
   end: number;
 }
 
-/** Posição de cada trecho na faixa magnética. */
+export const OVERLAP_TRANSITIONS = new Set(['dissolve', 'wipe', 'slide']);
+
+/** Sobreposição com o trecho anterior (transições cruzadas), limitada a metade de cada trecho. */
+export function overlapOf(clips: VideoClip[], i: number): number {
+  const c = clips[i];
+  if (i === 0 || !c.transition || !OVERLAP_TRANSITIONS.has(c.transition.type)) return 0;
+  return Math.max(0, Math.min(c.transition.duration, clipDuration(clips[i - 1]) / 2, clipDuration(c) / 2));
+}
+
+/** Posição de cada trecho na faixa magnética (com transição cruzada, o trecho começa antes do fim do anterior). */
 export function layoutClips(clips: VideoClip[]): PlacedClip[] {
   let t = 0;
   return clips.map((clip, index) => {
     const d = clipDuration(clip);
-    const p = { clip, index, start: t, end: t + d };
-    t += d;
+    const start = Math.max(0, t - overlapOf(clips, index));
+    const p = { clip, index, start, end: start + d };
+    t = start + d;
     return p;
   });
 }

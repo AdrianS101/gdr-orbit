@@ -5,6 +5,10 @@ import { AppError, badRequest } from '../lib/errors.ts';
 import { enqueue } from '../jobs/queue.ts';
 import { accountTotals, adAccounts, adsReport } from './insights.ts';
 import { MetaError } from './meta.ts';
+import { parseMetricsCsv } from '../../../shared/metrics-import.ts';
+import { uid } from '../../../shared/timeline.ts';
+import crypto from 'node:crypto';
+import { now } from '../db.ts';
 
 function range(q: any) {
   const since = Date.parse(String(q.since));
@@ -38,10 +42,12 @@ export async function resultsRoutes(app: FastifyInstance) {
         out.push({ id: a.id, network: a.network, name: a.username ?? a.name, avatar: a.avatar, totals: {}, prev: {}, notes: [], fetchedAt: null, error: e instanceof MetaError ? `${e.message} ${e.hint}` : (e as Error).message });
       }
     }
-    const ids = accounts.map((a) => a.id);
+    // Contas com métricas importadas manualmente (ex.: TikTok) também entram no ranking, identificadas.
+    const manual = db.prepare("SELECT DISTINCT account_id FROM media_items m JOIN social_accounts a ON a.id = m.account_id WHERE a.brand_id = ? AND m.source = 'manual'").all(q.brandId) as any[];
+    const ids = Array.from(new Set([...accounts.map((a) => a.id), ...manual.map((m) => m.account_id)]));
     const media = ids.length
       ? (db.prepare(`SELECT m.*, a.username, a.name AS account_name FROM media_items m JOIN social_accounts a ON a.id = m.account_id WHERE m.account_id IN (${ids.map(() => '?').join(',')}) AND m.posted_at >= ? AND m.posted_at < ? ORDER BY m.posted_at DESC`).all(...ids, new Date(since).toISOString(), new Date(until).toISOString()) as any[]).map((m) => ({
-          id: m.id, externalId: m.external_id, network: m.network, type: m.type, caption: m.caption, permalink: m.permalink, thumb: m.thumb, postedAt: m.posted_at, metrics: JSON.parse(m.metrics), updatedAt: m.updated_at, account: m.username ?? m.account_name,
+          id: m.id, externalId: m.external_id, network: m.network, type: m.type, caption: m.caption, permalink: m.permalink, thumb: m.thumb, postedAt: m.posted_at, metrics: JSON.parse(m.metrics), updatedAt: m.updated_at, account: m.username ?? m.account_name, source: m.source, importBatch: m.import_batch,
         }))
       : [];
     // Tráfego pago (se a marca tiver conta de anúncio escolhida)
@@ -56,7 +62,41 @@ export async function resultsRoutes(app: FastifyInstance) {
       }
     }
     const lastSync = ids.length ? (db.prepare(`SELECT MAX(updated_at) AS t FROM media_items WHERE account_id IN (${ids.map(() => '?').join(',')})`).get(...ids) as any).t : null;
-    return { accounts: out, media, ads, lastSync };
+    const imports = (db.prepare('SELECT i.*, a.network, a.username, a.name FROM metric_imports i JOIN social_accounts a ON a.id = i.account_id WHERE i.brand_id = ? ORDER BY i.created_at DESC').all(q.brandId) as any[]).map((i) => ({ id: i.id, file: i.file, rows: i.rows, network: i.network, profile: i.username ?? i.name, createdAt: i.created_at }));
+    return { accounts: out, media, ads, lastSync, imports };
+  });
+
+  // ---- importação manual (CSV) ----
+  app.post('/api/results/import', async (req) => {
+    const b = (req.body ?? {}) as { brandId: string; network: string; profile: string; file: string; csv: string; dryRun?: boolean };
+    if (!db.prepare('SELECT 1 FROM brands WHERE id = ?').get(b.brandId)) throw badRequest('Escolha a marca.');
+    const net = ['instagram', 'facebook', 'tiktok', 'youtube', 'linkedin'].includes(b.network) ? b.network : null;
+    if (!net) throw badRequest('Escolha a rede dos dados.');
+    const profile = String(b.profile ?? '').trim().replace(/^@/, '');
+    if (!profile) throw badRequest('Informe o perfil (@) a que os números pertencem.');
+    const parsed = parseMetricsCsv(String(b.csv ?? ''));
+    if (b.dryRun || !parsed.rows.length) return { ...parsed, imported: 0 };
+    let acc = db.prepare('SELECT * FROM social_accounts WHERE brand_id = ? AND network = ? AND (username = ? OR name = ?)').get(b.brandId, net, profile, profile) as any;
+    if (!acc) {
+      const id = uid('sa_');
+      db.prepare("INSERT INTO social_accounts (id, brand_id, network, external_id, name, username, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'manual', ?)").run(id, b.brandId, net, `manual:${profile}`, profile, profile, now());
+      acc = db.prepare('SELECT * FROM social_accounts WHERE id = ?').get(id);
+    }
+    const batch = uid('mi_');
+    const up = db.prepare("INSERT INTO media_items (id, account_id, network, external_id, type, caption, permalink, posted_at, metrics, updated_at, source, import_batch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?) ON CONFLICT(account_id, external_id) DO UPDATE SET type = excluded.type, caption = excluded.caption, permalink = excluded.permalink, posted_at = excluded.posted_at, metrics = excluded.metrics, updated_at = excluded.updated_at, source = 'manual', import_batch = excluded.import_batch");
+    for (const r of parsed.rows) {
+      const key = 'manual:' + crypto.createHash('sha1').update(r.link || `${r.postedAt}|${r.caption}`).digest('hex').slice(0, 16);
+      up.run(uid('mx_'), acc.id, net, key, r.type, r.caption, r.link, r.postedAt, JSON.stringify(r.metrics), now(), batch);
+    }
+    db.prepare('INSERT INTO metric_imports (id, brand_id, account_id, file, rows, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(batch, b.brandId, acc.id, String(b.file || 'planilha.csv').slice(0, 200), parsed.rows.length, now());
+    return { ...parsed, imported: parsed.rows.length, batch };
+  });
+
+  app.delete('/api/results/import/:id', async (req) => {
+    const id = (req.params as any).id;
+    db.prepare("DELETE FROM media_items WHERE import_batch = ? AND source = 'manual'").run(id);
+    db.prepare('DELETE FROM metric_imports WHERE id = ?').run(id);
+    return { ok: true };
   });
 
   app.get('/api/results/ad-accounts', async () => {

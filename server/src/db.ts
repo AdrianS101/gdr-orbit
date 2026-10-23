@@ -143,6 +143,14 @@ const migrations: string[] = [
   CREATE INDEX idx_flows_recipient ON automation_flows(account_id, recipient_id);
   `,
   `ALTER TABLE posts ADD COLUMN cover TEXT;`,
+  `
+  ALTER TABLE media_items ADD COLUMN source TEXT NOT NULL DEFAULT 'api';
+  ALTER TABLE media_items ADD COLUMN import_batch TEXT;
+  CREATE TABLE metric_imports (
+    id TEXT PRIMARY KEY, brand_id TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE, account_id TEXT NOT NULL,
+    file TEXT NOT NULL, rows INTEGER NOT NULL, created_at TEXT NOT NULL
+  );
+  `,
 ];
 
 db.exec('CREATE TABLE IF NOT EXISTS _migrations (n INTEGER PRIMARY KEY)');

@@ -239,7 +239,7 @@ export const ACTION_CATALOG = `Ações disponíveis (use somente estas; tempos e
 - captions {preset?: "highlight"|"pop"|"karaoke"|"classic"|"box", highlightColor?: "#RRGGBB", uppercase?: bool, position?: "top"|"middle"|"bottom"} — gera/estiliza legendas sincronizadas.
 - logo {position?: "top-right"|"top-left"|"bottom-right"|"bottom-left"} — aplica o logo da marca.
 - text {text, start, duration?, kind?: "title"|"lower"|"cta", anim?: "fade"|"pop"|"slide"} — título, lower third ou chamada.
-- transitions {transition: "fade"|"flash"|"zoom", duration?: 0.2-2} — transição em todos os cortes.
+- transitions {transition: "fade"|"flash"|"zoom"|"dissolve"|"wipe"|"slide", duration?: 0.2-2} — transição em todos os cortes (dissolve/wipe/slide sobrepõem os trechos e encurtam o vídeo pela duração).
 - filter {preset: ${Object.keys(COLOR_PRESETS).map((k) => `"${k}"`).join('|')}} — filtro de cor em todo o vídeo.
 - zoom {start, end, scale?: 1.05-1.5} — aproximação num trecho (ênfase).
 - dynamic_zoom {} — zoom suave alternado em todos os trechos (ritmo).

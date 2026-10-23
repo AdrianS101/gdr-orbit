@@ -90,7 +90,8 @@ export interface AudioClip {
   denoise?: DenoiseLevel;
 }
 
-export type TransitionType = 'fade' | 'flash' | 'zoom';
+/** fade/flash/zoom: sem sobreposição (metade em cada trecho). dissolve/wipe/slide: o trecho seguinte começa antes, sobreposto ao anterior. */
+export type TransitionType = 'fade' | 'flash' | 'zoom' | 'dissolve' | 'wipe' | 'slide';
 
 export interface ColorAdjust {
   preset: string;

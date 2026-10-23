@@ -7,8 +7,8 @@ import JASSUB from 'jassub';
 import { useEditor } from './store.ts';
 import { media } from '../lib/api.ts';
 import { buildAss } from '../../../shared/ass.ts';
-import { clipFx, colorSvg, fadeAt, isNeutral, musicGainAt, speechIntervals, zoomAt } from '../../../shared/effects.ts';
-import { clipAt, layoutClips, sourceTimeAt, timelineDuration, SAFE_AREAS_VERTICAL, type PlacedClip } from '../../../shared/timeline.ts';
+import { clipFx, colorSvg, crossAt, fadeAt, isNeutral, musicGainAt, speechIntervals, zoomAt } from '../../../shared/effects.ts';
+import { clipAt, layoutClips, overlapOf, sourceTimeAt, timelineDuration, SAFE_AREAS_VERTICAL, type PlacedClip } from '../../../shared/timeline.ts';
 import { audioClipGain, layerDuration, overlayBase, setAt, stackedLayers, transformAt } from '../../../shared/keyframes.ts';
 import type { Asset, AudioClip, LayerClip, Timeline, VideoClip } from '../../../shared/types.ts';
 
@@ -53,7 +53,7 @@ export function Player({ showSafe }: { showSafe: boolean }) {
   }, [W, H]);
 
   // ---- motor de reprodução ----
-  const eng = useRef({ active: 0, clipId: '' as string, raf: 0, audio: null as AudioContext | null, gains: [] as GainNode[], placed: [] as PlacedClip[], tl: timeline });
+  const eng = useRef({ active: 0, clipId: '' as string, incoming: '' as string, raf: 0, audio: null as AudioContext | null, gains: [] as GainNode[], placed: [] as PlacedClip[], tl: timeline });
   eng.current.placed = placed;
   eng.current.tl = timeline;
 
@@ -108,7 +108,10 @@ export function Player({ showSafe }: { showSafe: boolean }) {
     e.clipId = p.clip.id;
     show(e.active);
     const next = pl[p.index + 1];
-    if (next) loadInto(videos()[1 - e.active], next, next.clip.in);
+    // Na sobreposição de uma transição cruzada, o próximo trecho já aparece junto.
+    const inOverlap = next && overlapOf(e.tl.clips, next.index) > 0 && t >= next.start;
+    if (next) loadInto(videos()[1 - e.active], next, inOverlap ? sourceTimeAt(next, t) : next.clip.in);
+    e.incoming = inOverlap ? next.clip.id : '';
   };
 
   // Atualiza a prévia quando o tempo muda por fora (clique na timeline) ou a timeline é editada.
@@ -147,6 +150,20 @@ export function Player({ showSafe }: { showSafe: boolean }) {
         return;
       }
       let t = cur.start + (v.currentTime - cur.clip.in) / cur.clip.speed;
+      const nx = pl[cur.index + 1];
+      const ov = nx ? overlapOf(e.tl.clips, nx.index) : 0;
+      if (nx && ov > 0 && t >= nx.start) {
+        const nv = videos()[1 - e.active];
+        if (e.incoming !== nx.clip.id) {
+          loadInto(nv, nx, sourceTimeAt(nx, t));
+          nv.play().catch(() => {});
+          e.incoming = nx.clip.id;
+        }
+        // acrossfade com curva linear: sai (1-u), entra u
+        const u = Math.min(1, (t - nx.start) / ov);
+        setGain(e.active, cur.clip.volume * (1 - u));
+        setGain(1 - e.active, nx.clip.volume * u);
+      }
       if (v.currentTime >= cur.clip.out - END_EPS || v.ended) {
         const next = pl[cur.index + 1];
         if (!next) {
@@ -158,15 +175,17 @@ export function Player({ showSafe }: { showSafe: boolean }) {
         }
         v.pause();
         const nv = videos()[1 - e.active];
-        loadInto(nv, next, next.clip.in);
+        const already = e.incoming === next.clip.id;
+        if (!already) loadInto(nv, next, next.clip.in);
         e.active = 1 - e.active;
         e.clipId = next.clip.id;
+        e.incoming = '';
         setGain(e.active, next.clip.volume);
         show(e.active);
         nv.play().catch(() => {});
         const after = pl[next.index + 1];
         if (after) setTimeout(() => loadInto(v, after, after.clip.in), 0);
-        t = next.start;
+        t = already ? next.start + (nv.currentTime - next.clip.in) / next.clip.speed : next.start;
       }
       t = Math.max(cur.start, Math.min(t, total));
       lastEmitted.current = t;
@@ -189,11 +208,34 @@ export function Player({ showSafe }: { showSafe: boolean }) {
   const zoom = activePlaced && fx ? zoomAt(activePlaced.clip, fx, localT) : 1;
   const fade = fx ? fadeAt(fx, localT) : null;
   const color = activeClip?.color && !isNeutral(activeClip.color) ? colorSvg(activeClip.color) : null;
+  // Transição cruzada: o trecho que entra é desenhado por cima, com a mesma conta do xfade da exportação.
+  const nextPlaced = activePlaced ? placed[activePlaced.index + 1] : undefined;
+  const nextOv = nextPlaced ? overlapOf(timeline.clips, nextPlaced.index) : 0;
+  const crossing = nextPlaced && nextOv > 0 && time >= nextPlaced.start ? crossAt(nextPlaced.clip.transition!.type, (time - nextPlaced.start) / nextOv) : null;
+  const inClip = crossing ? nextPlaced!.clip : null;
+  const inZoom = crossing && nextPlaced ? zoomAt(nextPlaced.clip, clipFx(timeline.clips, nextPlaced.index), time - nextPlaced.start) : 1;
+  const inColor = inClip?.color && !isNeutral(inClip.color) ? colorSvg(inClip.color) : null;
   useLayoutEffect(() => {
-    for (const v of videos()) {
-      v.style.transform = zoom !== 1 ? `scale(${zoom})` : '';
-      v.style.transformOrigin = activeClip ? `${activeClip.focusX * 100}% ${activeClip.focusY * 100}%` : '';
-      v.style.filter = color ? 'url(#orbit-color)' : '';
+    const e = eng.current;
+    const [act, other] = [videos()[e.active], videos()[1 - e.active]];
+    const paint = (v: HTMLVideoElement, c: VideoClip | null | undefined, z: number, tx: number, filter: string) => {
+      v.style.transform = `${tx ? `translateX(${tx}%) ` : ''}${z !== 1 ? `scale(${z})` : ''}`;
+      v.style.transformOrigin = c ? `${c.focusX * 100}% ${c.focusY * 100}%` : '';
+      v.style.filter = filter;
+    };
+    paint(act, activeClip, zoom, crossing?.out.tx ?? 0, color ? 'url(#orbit-color)' : '');
+    act.style.opacity = '1';
+    act.style.zIndex = '0';
+    act.style.clipPath = 'none';
+    if (crossing && e.incoming === inClip?.id) {
+      paint(other, inClip, inZoom, crossing.in.tx, inColor ? 'url(#orbit-color-in)' : '');
+      other.style.opacity = String(crossing.in.opacity);
+      other.style.clipPath = crossing.in.clip;
+      other.style.zIndex = '1';
+    } else {
+      other.style.opacity = '0';
+      other.style.clipPath = 'none';
+      other.style.zIndex = '0';
     }
   });
 
@@ -331,6 +373,14 @@ export function Player({ showSafe }: { showSafe: boolean }) {
         <video ref={v0} className="stage-layer" playsInline preload="auto" />
         <video ref={v1} className="stage-layer" playsInline preload="auto" style={{ opacity: 0 }} />
         <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
+          <filter id="orbit-color-in" colorInterpolationFilters="sRGB">
+            <feComponentTransfer>
+              <feFuncR type="linear" slope={inColor?.slope ?? 1} intercept={inColor?.intercept ?? 0} />
+              <feFuncG type="linear" slope={inColor?.slope ?? 1} intercept={inColor?.intercept ?? 0} />
+              <feFuncB type="linear" slope={inColor?.slope ?? 1} intercept={inColor?.intercept ?? 0} />
+            </feComponentTransfer>
+            <feColorMatrix type="matrix" values={inColor?.matrix ?? '1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 1 0'} />
+          </filter>
           <filter id="orbit-color" colorInterpolationFilters="sRGB">
             <feComponentTransfer>
               <feFuncR type="linear" slope={color?.slope ?? 1} intercept={color?.intercept ?? 0} />

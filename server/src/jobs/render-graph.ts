@@ -1,8 +1,8 @@
 // Monta o comando do FFmpeg a partir da timeline.
 // Usa a mesma matemática de enquadramento, posição de logo e legendas (ASS) da prévia.
 import type { AssetMeta, Keyframe, Timeline, Transform } from '../../../shared/types.ts';
-import { clipDuration, even, layoutClips, timelineDuration } from '../../../shared/timeline.ts';
-import { clipFx, colorFfmpeg, isNeutral, speechIntervals, zoomExpr } from '../../../shared/effects.ts';
+import { clipDuration, even, layoutClips, overlapOf, timelineDuration } from '../../../shared/timeline.ts';
+import { clipFx, colorFfmpeg, isNeutral, speechIntervals, XFADE, zoomExpr } from '../../../shared/effects.ts';
 import { denoiseFilter, isAnimated, kfExpr, layerDuration, maxScale, opacityCommands, overlayBase, sortKfs, stackedLayers } from '../../../shared/keyframes.ts';
 
 const fx2 = (v: number) => Math.min(1, Math.max(0, v));
@@ -89,7 +89,7 @@ export function buildRenderArgs(tl: Timeline, st: RenderSettings, inp: RenderInp
     if (!isNeutral(c.color)) post += `${colorFfmpeg(c.color!)},`;
     if (cfx.head && cfx.head.type !== 'zoom') post += `fade=t=in:st=0:d=${f(cfx.head.d)}:color=${cfx.head.type === 'flash' ? 'white' : 'black'},`;
     if (cfx.tail && cfx.tail.type !== 'zoom') post += `fade=t=out:st=${f(D - cfx.tail.d)}:d=${f(cfx.tail.d)}:color=${cfx.tail.type === 'flash' ? 'white' : 'black'},`;
-    const tail = `${post}tpad=stop_mode=clone:stop_duration=0.2,trim=duration=${f(D)},setpts=PTS-STARTPTS,setsar=1,format=yuv420p[v${i}]`;
+    const tail = `${post}tpad=stop_mode=clone:stop_duration=0.2,trim=duration=${f(D)},setpts=PTS-STARTPTS,setsar=1,format=yuv420p,settb=AVTB[v${i}]`;
     if (c.fit === 'cover') {
       filters.push(`${base},${cover},${tail}`);
     } else if (c.fit === 'contain') {
@@ -114,7 +114,29 @@ export function buildRenderArgs(tl: Timeline, st: RenderSettings, inp: RenderInp
     concatPads.push(`[v${i}][a${i}]`);
   });
 
-  filters.push(`${concatPads.join('')}concat=n=${placed.length}:v=1:a=1[vcat][acat]`);
+  if (!placed.some((p) => overlapOf(tl.clips, p.index) > 0)) {
+    filters.push(`${concatPads.join('')}concat=n=${placed.length}:v=1:a=1[vcat][acat]`);
+  } else {
+    // Transições cruzadas: junta um trecho por vez; xfade/acrossfade onde há sobreposição, concat no resto.
+    // O offset do xfade é o início do trecho na timeline (mesmo layout da prévia).
+    let v = 'v0';
+    let a = 'a0';
+    for (let i = 1; i < placed.length; i++) {
+      const ov = overlapOf(tl.clips, i);
+      const last = i === placed.length - 1;
+      const vo = last ? 'vcat' : `vx${i}`;
+      const ao = last ? 'acat' : `ax${i}`;
+      if (ov > 0) {
+        filters.push(`[${v}][v${i}]xfade=transition=${XFADE[tl.clips[i].transition!.type]}:duration=${f(ov)}:offset=${f(placed[i].start)},settb=AVTB[${vo}]`);
+        filters.push(`[${a}][a${i}]acrossfade=d=${f(ov)}:c1=tri:c2=tri[${ao}]`);
+      } else {
+        filters.push(`[${v}][${a}][v${i}][a${i}]concat=n=2:v=1:a=1[${vo}tmp][${ao}]`);
+        filters.push(`[${vo}tmp]settb=AVTB[${vo}]`);
+      }
+      v = vo;
+      a = ao;
+    }
+  }
   let vLabel = 'vcat';
 
   // Faixas livres (picture-in-picture/B-roll), depois logo/imagens — mesma geometria e quadros-chave da prévia.

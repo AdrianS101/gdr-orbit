@@ -169,7 +169,7 @@ export async function socialRoutes(app: FastifyInstance) {
   // ---- contas ----
   app.get('/api/social/accounts', async (req) => {
     const { brandId } = req.query as { brandId?: string };
-    return (brandId ? db.prepare('SELECT * FROM social_accounts WHERE brand_id = ? ORDER BY network, name').all(brandId) : db.prepare('SELECT * FROM social_accounts ORDER BY network, name').all()).map(rowToAccount);
+    return (brandId ? db.prepare("SELECT * FROM social_accounts WHERE brand_id = ? AND status != 'manual' ORDER BY network, name").all(brandId) : db.prepare("SELECT * FROM social_accounts WHERE status != 'manual' ORDER BY network, name").all()).map(rowToAccount);
   });
 
   app.get('/api/social/meta/connect', async (req, reply) => {
