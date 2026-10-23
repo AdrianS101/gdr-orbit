@@ -6,6 +6,7 @@ import { api } from '../lib/api.ts';
 import { useApp, showError, onJob } from '../lib/store.ts';
 import { Empty, Field, Spinner } from '../components/ui.tsx';
 import { fmtDateTime, fmtRelative } from '../lib/format.ts';
+import { ProfileAnalysis, AskData, Competitors, Ideas } from './Intelligence.tsx';
 
 const LABEL: Record<string, string> = {
   views: 'Visualizações',
@@ -55,6 +56,7 @@ export function ResultsPage() {
   const [loading, setLoading] = useState(false);
   const [sort, setSort] = useState('views');
   const [adAccounts, setAdAccounts] = useState<any[] | null>(null);
+  const [tab, setTab] = useState('painel');
 
   const load = () => {
     if (!brandId) return;
@@ -122,6 +124,17 @@ export function ResultsPage() {
         <span className="faint small">Comparado ao período anterior de mesma duração. Conteúdos sincronizados {data?.lastSync ? fmtRelative(data.lastSync) : 'ainda não'}.</span>
         {loading && <Spinner />}
       </div>
+
+      <div className="tabs" role="tablist">
+        {[['painel', 'Painel'], ['perfil', 'Análise do perfil'], ['perguntas', 'Pergunte aos dados'], ['concorrentes', 'Concorrentes e tendências'], ['pautas', 'Pautas']].map(([k, l]) => (
+          <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>
+        ))}
+      </div>
+      {tab === 'perfil' && <ProfileAnalysis brandId={brandId} since={new Date(since).toISOString()} until={new Date(Date.parse(until) + 86400_000).toISOString()} />}
+      {tab === 'perguntas' && <AskData brandId={brandId} since={new Date(since).toISOString()} until={new Date(Date.parse(until) + 86400_000).toISOString()} />}
+      {tab === 'concorrentes' && <Competitors brandId={brandId} />}
+      {tab === 'pautas' && <Ideas brandId={brandId} />}
+      {tab === 'painel' && (<>
 
       {data && !data.accounts.length && (
         <Empty icon={<BarChart3 size={36} />} title="Nenhum perfil conectado">
@@ -263,6 +276,7 @@ export function ResultsPage() {
         <h2 className="row" style={{ margin: 0 }}><FileText size={16} /> Relatório padrão GDR</h2>
         <span className="muted small">Aguardando o modelo de relatório que você vai desenvolver. Quando o padrão estiver definido, os dados desta tela serão montados nele automaticamente para enviar ao cliente.</span>
       </section>
+      </>)}
     </>
   );
 }

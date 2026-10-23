@@ -125,6 +125,14 @@ const migrations: string[] = [
     UNIQUE (automation_id, trigger_id, step)
   );
   `,
+  `
+  CREATE TABLE ideas (
+    id TEXT PRIMARY KEY, brand_id TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
+    title TEXT NOT NULL, details TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'manual',
+    status TEXT NOT NULL DEFAULT 'idea', script TEXT, project_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_ideas_brand ON ideas(brand_id, created_at);
+  `,
 ];
 
 db.exec('CREATE TABLE IF NOT EXISTS _migrations (n INTEGER PRIMARY KEY)');

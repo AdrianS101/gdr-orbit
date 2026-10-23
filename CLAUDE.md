@@ -139,6 +139,13 @@ Fonte da interface: Inter (variável, empacotada). Ícones: lucide-react.
 - Permissões adicionadas no app Meta: instagram_manage_insights, read_insights, ads_read (caso de uso API de Marketing). Usuário precisa reconectar os perfis para conceder.
 - Relatório padrão GDR: espaço reservado, aguardando o modelo do usuário.
 - PWA: manifest + service worker mínimo + ícones GDR (instalável no celular).
+- Inteligência (server/src/social/intelligence.ts, abas em Resultados — web/src/pages/Intelligence.tsx):
+  - Análise do perfil: estatísticas calculadas (medianas por formato/dia/horário, frequência, aviso com < 10 posts) + IA com evidência/mudança/resultado a testar/métrica, cada ponto classificado verificado/observação/hipótese.
+  - Pergunte aos dados: responde só com os posts e totais do período, cita os posts usados e declara limitações (ex.: Meta não dá seguidores por post).
+  - Concorrentes e referências: IG business_discovery (perfis profissionais públicos, últimos 25 posts; engajamento = (curtidas+comentários)/seguidores; views de terceiros não existem na API).
+  - Tendências na web: Gemini com Busca do Google (`geminiResearch`) — no plano gratuito retorna 429; a tela diz isso e não mostra nada sem fonte.
+  - Pautas (tabela `ideas`): de recomendações/perguntas ou manuais → roteiro com IA (editável) → projeto de edição 9:16.
+  - Validado com dados reais (rodrigo.napoleao 19 posts / 90 dias; benchmark gdr.resultados × sebrae).
 
 ## Etapa 5 (em andamento) — Caixa de entrada e automações
 - server/src/social/inbox.ts: coleta por polling a cada 60 s (sem webhook, pois roda local): conversas (IG/Messenger via /{page}/conversations) e comentários das últimas 15 publicações; contatos e mensagens com anti-duplicidade pelo id externo; registra recebido, sugerido (IA), enviado e falha.

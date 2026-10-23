@@ -22,6 +22,7 @@ import { driveRoutes, driveImportHandler, startDriveWatcher } from './drive.ts';
 import { resultsRoutes } from './social/results-routes.ts';
 import { metricsHandler } from './social/insights.ts';
 import { inboxRoutes } from './social/inbox-routes.ts';
+import { intelligenceRoutes } from './social/intelligence.ts';
 import { startInbox } from './social/inbox.ts';
 
 const app = Fastify({
@@ -57,6 +58,7 @@ await app.register(socialRoutes);
 await app.register(driveRoutes);
 await app.register(resultsRoutes);
 await app.register(inboxRoutes);
+await app.register(intelligenceRoutes);
 
 // Interface compilada (produção). Em desenvolvimento o Vite serve a interface.
 if (fs.existsSync(path.join(config.webDist, 'index.html'))) {

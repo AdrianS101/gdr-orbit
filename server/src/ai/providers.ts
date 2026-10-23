@@ -211,13 +211,13 @@ function geminiKey(): string | null {
 }
 
 /** Chamada com limite de 20 s: se o modelo travar, vale como "sobrecarregado" e o próximo é tentado. */
-async function geminiCall(model: string, key: string, body: unknown): Promise<Response> {
+async function geminiCall(model: string, key: string, body: unknown, timeoutMs = 20_000): Promise<Response> {
   try {
     return await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e) {
     if ((e as Error).name === 'TimeoutError') return new Response(JSON.stringify({ error: { message: 'Tempo esgotado.' } }), { status: 504 });
@@ -300,6 +300,54 @@ async function geminiJson<T>(req: JsonRequest): Promise<JsonResult<T>> {
     if (!d) throw new AiError('A IA não devolveu o formato esperado.', 'Tente novamente.');
     return { data: d as T, provider: 'gemini', model };
   }
+}
+
+// ---------- Pesquisa na web (Gemini + Busca do Google) ----------
+
+export interface ResearchResult {
+  text: string;
+  sources: { title: string; uri: string }[];
+  queries: string[];
+  model: string;
+  searchedAt: string;
+}
+
+/** Pesquisa com a Busca do Google integrada ao Gemini. Devolve o texto e as fontes reais consultadas. */
+export async function geminiResearch(system: string, prompt: string): Promise<ResearchResult> {
+  const key = geminiKey();
+  if (!key) throw new AiError('A pesquisa na web usa o Gemini, que não está configurado.', 'Adicione a chave grátis do Gemini em Configurações > IA.');
+  const body = {
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    tools: [{ google_search: {} }],
+    generationConfig: { maxOutputTokens: 8192 },
+  };
+  let last = '';
+  for (const m of Array.from(new Set([getSetting<string>('ai.geminiModel', GEMINI_DEFAULT), ...GEMINI_FALLBACKS]))) {
+    if ((geminiBusy.get(m) ?? 0) > Date.now()) continue;
+    let res: Response;
+    try {
+      res = await geminiCall(m, key, body, 90_000);
+    } catch {
+      throw new AiError('Sem conexão com o Gemini.', 'Verifique sua internet e tente novamente.');
+    }
+    const j: any = await res.json().catch(() => ({}));
+    if ([500, 503, 504].includes(res.status)) {
+      geminiBusy.set(m, Date.now() + 10 * 60_000);
+      last = 'sobrecarregado';
+      continue;
+    }
+    if (res.status === 404) continue;
+    if (res.status === 429) throw new AiError('Limite gratuito do Gemini atingido por agora.', 'A pesquisa com Busca do Google tem cota diária menor. Tente mais tarde.');
+    if (!res.ok) throw new AiError(`O Gemini retornou um erro: ${String(j?.error?.message ?? res.status).slice(0, 200)}`, 'Tente novamente em instantes.');
+    const cand = j.candidates?.[0];
+    const text = (cand?.content?.parts ?? []).map((p: any) => p.text ?? '').join('');
+    const gm = cand?.groundingMetadata ?? {};
+    const sources = (gm.groundingChunks ?? []).map((c: any) => ({ title: c.web?.title ?? c.web?.domain ?? 'fonte', uri: c.web?.uri ?? '' })).filter((x: any) => x.uri);
+    markVerified('gemini', true);
+    return { text, sources, queries: gm.webSearchQueries ?? [], model: m, searchedAt: new Date().toISOString() };
+  }
+  throw new AiError(last === 'sobrecarregado' ? 'Os modelos do Gemini estão sobrecarregados agora.' : 'Nenhum modelo do Gemini disponível para pesquisa.', 'Tente de novo em alguns minutos.');
 }
 
 // ---------- OpenAI (GPT) — chave de API própria, cobrança por uso (separada da assinatura do ChatGPT) ----------
