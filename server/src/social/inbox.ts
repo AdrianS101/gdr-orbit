@@ -146,10 +146,10 @@ async function onComment(acc: any, contact: any, c: { id: string; text: string; 
     if (!commentTriggers(cfg, c.text, c.mediaId)) continue;
     // Anti-duplicidade: cada comentário dispara cada automação no máximo uma vez; e cada pessoa recebe a DM uma vez por automação.
     if (!runOnce(a.id, c.id, 'trigger', contact.id)) continue;
-    const cfgFlow = usesButtonFlow(cfg);
-    const already = cfgFlow
-      ? db.prepare("SELECT 1 FROM automation_flows WHERE automation_id = ? AND contact_id = ? AND stage = 'delivered'").get(a.id, contact.id)
-      : db.prepare("SELECT 1 FROM automation_runs WHERE automation_id = ? AND contact_id = ? AND step = 'dm' AND status = 'done'").get(a.id, contact.id);
+    // Só conta como "já recebeu" quando o conteúdo (link) foi entregue — um convite com botão que ficou sem resposta não conta.
+    const already =
+      db.prepare("SELECT 1 FROM automation_flows WHERE automation_id = ? AND contact_id = ? AND stage = 'delivered'").get(a.id, contact.id) ||
+      db.prepare("SELECT 1 FROM automation_runs WHERE automation_id = ? AND contact_id = ? AND step = 'dm' AND status = 'done' AND (detail IS NULL OR detail NOT LIKE 'Convite%')").get(a.id, contact.id);
     const vars = { nome: contact.name, usuario: contact.username };
     try {
       const reply = pickCommentReply(cfg, Number.parseInt(c.id.slice(-4), 36) || 0, vars);
