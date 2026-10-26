@@ -26,6 +26,7 @@ import { inboxRoutes } from './social/inbox-routes.ts';
 import { intelligenceRoutes } from './social/intelligence.ts';
 import { studioRoutes } from './routes/studio.ts';
 import { startInbox } from './social/inbox.ts';
+import { keepAwake } from './lib/keepawake.ts';
 
 const app = Fastify({
   trustProxy: true,
@@ -86,6 +87,7 @@ startQueue();
 startScheduler();
 startDriveWatcher();
 startInbox();
+keepAwake();
 
 await app.listen({ host: config.host, port: config.port });
 console.log(`\n  GDR Digital rodando em http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}`);

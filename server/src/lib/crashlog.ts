@@ -20,4 +20,8 @@ export function logError(kind: string, e: unknown) {
 }
 
 process.on('unhandledRejection', (e) => logError('Promessa sem tratamento', e));
-process.on('uncaughtException', (e) => logError('Erro não tratado', e));
+process.on('uncaughtException', (e: any) => {
+  logError('Erro não tratado', e);
+  // Porta ocupada: sai para o inicializador tentar de novo (em vez de ficar parado sem atender).
+  if (e?.code === 'EADDRINUSE') process.exit(1);
+});
