@@ -165,6 +165,8 @@ Fonte da interface: Inter (variável, empacotada). Ícones: lucide-react.
 - Ocorrido em 2026-10-23: Meta pediu confirmação da conta de desenvolvedor por "atividade incomum". Volume reduzido: caixa de entrada a cada 3 min (era 1), comentários só dos posts cujo total mudou, 3 perfis enriquecidos por rodada.
 
 ## Estabilidade
+- Enquanto o servidor roda no Windows, ele impede a suspensão do PC (server/src/lib/keepawake.ts, SetThreadExecutionState; não altera configurações; desligar com ORBIT_ALLOW_SLEEP=1). Porta ocupada encerra o processo para o inicializador tentar de novo.
+- Link público para apresentar: `Apresentar - link publico.cmd` sobe o servidor (se preciso) e um Cloudflare Quick Tunnel (tools/cloudflared.exe, fora do Git) → https://…trycloudflare.com, salvo em data/logs/link-publico.txt e copiado. O endereço muda a cada abertura; login continua exigindo a senha. PC precisa estar ligado.
 - `Iniciar GDR Digital.cmd` reinicia o servidor sozinho se ele parar (registro em data/logs/reinicios.log). Erros soltos não derrubam mais o processo: vão para data/logs/erros.log (server/src/lib/crashlog.ts).
 - Automações: perfis com automação ativa (ou caixa no modo automático) são verificados a cada 20 s (60 s se o uso da Meta passar de 40%); os demais a cada 3 min. Resposta instantânea de verdade só com webhook (servidor na nuvem).
 
