@@ -32,6 +32,7 @@ interface HomeData {
 export function HomePage() {
   const { scope, brands, brandsLoaded, jobs } = useApp();
   const [data, setData] = useState<HomeData | null>(null);
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
   const nav = useNavigate();
 
   useEffect(() => {
@@ -62,7 +63,7 @@ export function HomePage() {
 
   const inProgress = data?.projects.filter((p) => p.status === 'editing' || p.status === 'draft') ?? [];
   const activeJobs = Object.values(jobs).filter((j) => (j.status === 'running' || j.status === 'queued') && (scope === 'all' || j.brandId === scope));
-  const failed = data?.failed.filter((f) => jobs[f.id]?.status !== 'done' && jobs[f.id]?.status !== 'queued') ?? [];
+  const failed = data?.failed.filter((f) => !hidden.has(f.id) && jobs[f.id]?.status !== 'done' && jobs[f.id]?.status !== 'queued') ?? [];
 
   return (
     <>
@@ -137,9 +138,11 @@ export function HomePage() {
           <section className="card" style={{ borderColor: 'rgba(239,68,68,.35)' }}>
             <h2 className="row">
               <AlertTriangle size={16} color="var(--danger)" /> Falhas que precisam de atenção
+              <span className="spacer" />
+              <button className="btn ghost sm" onClick={() => api.post('/api/jobs/dismiss-failed', scope !== 'all' ? { brandId: scope } : {}).then(() => { failed.forEach((j) => useApp.getState().removeJob(j.id)); setHidden(new Set(failed.map((j) => j.id))); }, showError)}>Limpar todos</button>
             </h2>
             {failed.map((j) => (
-              <JobRow key={j.id} j={jobs[j.id] ?? j} />
+              <JobRow key={j.id} j={jobs[j.id] ?? j} onDismissed={() => setHidden((h) => new Set([...h, j.id]))} />
             ))}
           </section>
         )}

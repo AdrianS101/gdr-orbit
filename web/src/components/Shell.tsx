@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Home, Building2, Clapperboard, FolderOpen, CalendarDays, Inbox, Workflow, BarChart3, Settings, ChevronDown, Check, Activity, X, RotateCcw, LogOut, Layers } from 'lucide-react';
+import { Home, Building2, Clapperboard, FolderOpen, CalendarDays, Inbox, Workflow, BarChart3, Settings, ChevronDown, Check, Activity, X, RotateCcw, LogOut, Layers, Trash2 } from 'lucide-react';
 import { useApp, showError } from '../lib/store.ts';
 import { api } from '../lib/api.ts';
 import { Progress, OrbitLogo } from './ui.tsx';
@@ -75,12 +75,15 @@ export function BrandSwitcher() {
 
 const JOB_LABEL: Record<string, string> = { ingest: 'Preparação', transcribe: 'Transcrição', render: 'Exportação', publish: 'Publicação', drive: 'Drive', metrics: 'Métricas' };
 
-export function JobRow({ j, compact }: { j: Job; compact?: boolean }) {
+export function JobRow({ j, compact, onDismissed }: { j: Job; compact?: boolean; onDismissed?: () => void }) {
   const removeJob = useApp((s) => s.removeJob);
   const act = async (a: 'cancel' | 'retry' | 'dismiss') => {
     try {
       await api.post(`/api/jobs/${j.id}/${a}`);
-      if (a === 'dismiss') removeJob(j.id);
+      if (a === 'dismiss') {
+        removeJob(j.id);
+        onDismissed?.();
+      }
     } catch (e) {
       showError(e);
     }
@@ -98,6 +101,11 @@ export function JobRow({ j, compact }: { j: Job; compact?: boolean }) {
         {(j.status === 'failed' || j.status === 'canceled') && (
           <button className="btn ghost sm" title="Tentar novamente" onClick={() => act('retry')}>
             <RotateCcw size={14} /> Tentar de novo
+          </button>
+        )}
+        {(j.status === 'failed' || j.status === 'canceled' || j.status === 'done') && (
+          <button className="btn ghost sm icon" title="Excluir da lista" aria-label="Excluir da lista" onClick={() => act('dismiss')}>
+            <Trash2 size={14} />
           </button>
         )}
       </div>

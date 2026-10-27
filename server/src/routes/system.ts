@@ -27,6 +27,13 @@ export async function systemRoutes(app: FastifyInstance) {
 
   app.post('/api/jobs/:id/cancel', async (req) => ({ ok: cancelJob((req.params as any).id) }));
   app.post('/api/jobs/:id/retry', async (req) => ({ ok: retryJob((req.params as any).id) }));
+  // Limpa todos os erros (da marca escolhida ou de todas).
+  app.post('/api/jobs/dismiss-failed', async (req) => {
+    const { brandId } = (req.body ?? {}) as { brandId?: string };
+    const r = brandId ? db.prepare("DELETE FROM jobs WHERE status IN ('failed','canceled') AND brand_id = ?").run(brandId) : db.prepare("DELETE FROM jobs WHERE status IN ('failed','canceled')").run();
+    return { removed: r.changes };
+  });
+
   app.post('/api/jobs/:id/dismiss', async (req) => {
     db.prepare("DELETE FROM jobs WHERE id = ? AND status IN ('failed','canceled','done')").run((req.params as any).id);
     return { ok: true };
