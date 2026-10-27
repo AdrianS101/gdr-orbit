@@ -1,14 +1,14 @@
 // Vários Reels a partir de uma entrevista: a IA sugere trechos completos (sempre em fronteiras de frase), você revisa e cria os projetos.
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, Scissors } from 'lucide-react';
+import { Sparkles, Scissors, Zap } from 'lucide-react';
 import { api, media } from '../lib/api.ts';
 import { useApp, showError, onJob } from '../lib/store.ts';
 import { Field, Modal, Progress, Spinner } from '../components/ui.tsx';
 import { fmtTime } from '../../../shared/timeline.ts';
 import type { Asset } from '../../../shared/types.ts';
 
-interface Seg { in: number; out: number; title: string; hook: string; why: string; text: string; warning: string | null }
+interface Seg { in: number; out: number; title: string; hook: string; why: string; text: string; warning: string | null; score?: number; structure?: { inicio: string; meio: string; fim: string }; hookIn?: number | null; hookOut?: number | null; hookText?: string | null }
 
 export function ReelsModal({ asset, onClose }: { asset: Asset; onClose: () => void }) {
   const nav = useNavigate();
@@ -24,6 +24,9 @@ export function ReelsModal({ asset, onClose }: { asset: Asset; onClose: () => vo
   const [note, setNote] = useState('');
   const [chosen, setChosen] = useState<boolean[]>([]);
   const [opts, setOpts] = useState({ removePauses: true, captions: true, logo: true, hookTitle: true });
+  const [viral, setViral] = useState(true);
+  const [autoExport, setAutoExport] = useState(true);
+  const [stage, setStage] = useState('');
 
   useEffect(() => onJob((j) => j.id === jobId && j.status === 'done' && setTranscribed(true)), [jobId]);
   const job = jobId ? jobs[jobId] : null;
@@ -32,7 +35,7 @@ export function ReelsModal({ asset, onClose }: { asset: Asset; onClose: () => vo
   const suggest = () => {
     setBusy(true);
     api
-      .post<{ segments: Seg[]; note: string }>(`/api/assets/${asset.id}/reels/suggest`, { count, minDur, maxDur, notes })
+      .post<{ segments: Seg[]; note: string }>(`/api/assets/${asset.id}/reels/suggest`, { count, minDur, maxDur, notes, viral })
       .then((r) => {
         setSegs(r.segments);
         setNote(r.note);
@@ -40,16 +43,39 @@ export function ReelsModal({ asset, onClose }: { asset: Asset; onClose: () => vo
       }, showError)
       .finally(() => setBusy(false));
   };
+  const finish = (r: { created: { id: string; name: string; warnings: string[]; jobId?: string | null }[] }) => {
+    const warn = r.created.flatMap((c) => c.warnings);
+    const exp = r.created.filter((c) => c.jobId).length;
+    useApp.getState().toast({ kind: 'success', title: `${r.created.length} corte(s) criado(s)${exp ? ` · ${exp} exportando` : ''}`, hint: warn.length ? `Avisos: ${Array.from(new Set(warn)).join(' ')}` : exp ? 'Acompanhe em Processamentos; os MP4 aparecem em cada projeto.' : 'Revise cada um no editor antes de exportar.' });
+    onClose();
+    nav('/projetos');
+  };
+  /** 1 clique: a IA escolhe os melhores cortes, cria os projetos com o estilo viral e já exporta. */
+  const oneClick = async () => {
+    setBusy(true);
+    try {
+      setStage('Lendo a conversa e escolhendo os melhores trechos…');
+      const sug = await api.post<{ segments: Seg[]; note: string }>(`/api/assets/${asset.id}/reels/suggest`, { count, minDur, maxDur, notes, viral: true });
+      if (!sug.segments.length) {
+        setNote(sug.note || 'Nenhum trecho completo encontrado.');
+        return;
+      }
+      setStage(`Montando ${sug.segments.length} corte(s) com legenda, filtro e ritmo…`);
+      finish(await api.post(`/api/assets/${asset.id}/reels/create`, { segments: sug.segments, ...opts, viral: true, autoExport }));
+    } catch (e) {
+      showError(e);
+    } finally {
+      setBusy(false);
+      setStage('');
+    }
+  };
   const create = () => {
     const picked = (segs ?? []).filter((_, i) => chosen[i]);
     setBusy(true);
     api
-      .post<{ created: { id: string; name: string; warnings: string[] }[] }>(`/api/assets/${asset.id}/reels/create`, { segments: picked, ...opts })
+      .post<{ created: { id: string; name: string; warnings: string[]; jobId?: string | null }[] }>(`/api/assets/${asset.id}/reels/create`, { segments: picked, ...opts, viral, autoExport })
       .then((r) => {
-        const warn = r.created.flatMap((c) => c.warnings);
-        useApp.getState().toast({ kind: 'success', title: `${r.created.length} projeto(s) criado(s)`, hint: warn.length ? `Avisos: ${Array.from(new Set(warn)).join(' ')}` : 'Revise cada um no editor antes de exportar.' });
-        onClose();
-        nav('/projetos');
+        finish(r);
       }, showError)
       .finally(() => setBusy(false));
   };
@@ -83,7 +109,13 @@ export function ReelsModal({ asset, onClose }: { asset: Asset; onClose: () => vo
               <div style={{ flex: 1, minWidth: 200 }}>
                 <Field label="Orientação (opcional)"><input className="input sm" placeholder="Ex.: foque nas dicas práticas sobre anúncios" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
               </div>
-              <button className="btn primary" disabled={busy} onClick={suggest}>{busy && !segs ? <Spinner /> : <Sparkles size={16} />} {segs ? 'Sugerir de novo' : 'Sugerir cortes'}</button>
+              <button className="btn" disabled={busy} onClick={suggest}>{busy && !segs && !stage ? <Spinner /> : <Sparkles size={16} />} {segs ? 'Sugerir de novo' : 'Revisar antes'}</button>
+              <button className="btn primary" disabled={busy} onClick={oneClick} title="A IA escolhe, monta e exporta os cortes sozinha">{stage ? <Spinner /> : <Zap size={16} />} Gerar cortes virais (1 clique)</button>
+            </div>
+            <div className="row wrap small" style={{ gap: 14 }}>
+              <label className="row"><input type="checkbox" checked={viral} onChange={(e) => setViral(e.target.checked)} /> Estilo viral (gancho de abertura, legenda grande, filtro cinematográfico, cortes com zoom)</label>
+              <label className="row"><input type="checkbox" checked={autoExport} onChange={(e) => setAutoExport(e.target.checked)} /> Já exportar os MP4</label>
+              {stage && <span className="faint">{stage}</span>}
             </div>
             <p className="faint small" style={{ margin: 0 }}>A IA só escolhe trechos que começam e terminam em fim de frase; o título na tela precisa ser fiel ao que é dito. Revise antes de criar.</p>
           </>
@@ -100,6 +132,9 @@ export function ReelsModal({ asset, onClose }: { asset: Asset; onClose: () => vo
               </label>
               <Field label="Nome do projeto"><input className="input sm" value={s.title} onChange={(e) => upd(i, { title: e.target.value })} /></Field>
               <Field label="Título na tela (3 primeiros segundos)"><input className="input sm" value={s.hook} onChange={(e) => upd(i, { hook: e.target.value })} /></Field>
+              {typeof s.score === 'number' && <span className="badge accent" style={{ alignSelf: 'flex-start' }}>Retenção estimada pela IA: {s.score}/100</span>}
+              {s.hookText && <span className="small"><b>Abre com:</b> “{s.hookText}”</span>}
+              {s.structure && <span className="small faint"><b>Início:</b> {s.structure.inicio} · <b>Meio:</b> {s.structure.meio} · <b>Fim:</b> {s.structure.fim}</span>}
               <span className="small faint">Por quê: {s.why}</span>
               {s.warning && <span className="small" style={{ color: 'var(--warning)' }}>{s.warning}</span>}
               <details className="small"><summary>Fala do trecho</summary><p style={{ whiteSpace: 'pre-wrap' }}>{s.text}</p></details>

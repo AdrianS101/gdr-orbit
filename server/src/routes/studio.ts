@@ -8,7 +8,9 @@ import { AppError, badRequest, notFound } from '../lib/errors.ts';
 import { assetPath } from '../lib/storage.ts';
 import { rowToAsset, rowToBrand } from '../lib/mappers.ts';
 import { DEFAULT_CAPTION_STYLE, defaultCaptionY, emptyTimeline, uid } from '../../../shared/timeline.ts';
-import { rhythmFromCuts, sanitizePicks, sentenceRange, splitSentences, type ReelPick, type RhythmProfile } from '../../../shared/studio.ts';
+import { hookRange, rhythmFromCuts, sanitizePicks, sentenceRange, splitSentences, VIRAL_CAPTION, type ReelPick, type RhythmProfile } from '../../../shared/studio.ts';
+import { enqueue } from '../jobs/queue.ts';
+import { availableEncoders } from '../lib/ffmpeg.ts';
 import { applyAction, type ActionContext, type EditAction } from '../../../shared/edit-actions.ts';
 import type { Asset, CaptionWord, Timeline } from '../../../shared/types.ts';
 import { generateJson, AiError } from '../ai/providers.ts';
@@ -43,6 +45,9 @@ const PICK_SCHEMA = {
           title: { type: 'string', description: 'Nome interno do corte' },
           hook: { type: 'string', description: 'Título curto para a tela nos 3 primeiros segundos, fiel ao que é dito (até 8 palavras)' },
           why: { type: 'string', description: 'Por que este trecho funciona sozinho' },
+          hookSentence: { type: 'integer', description: 'Modo viral: índice da frase MAIS forte dentro do trecho para abrir o vídeo (teaser), ou -1' },
+          score: { type: 'integer', description: 'Modo viral: potencial de retenção 0-100' },
+          structure: { type: 'object', additionalProperties: false, required: ['inicio', 'meio', 'fim'], properties: { inicio: { type: 'string' }, meio: { type: 'string' }, fim: { type: 'string' } } },
         },
       },
     },
@@ -67,7 +72,7 @@ export async function studioRoutes(app: FastifyInstance) {
   // ---- Reels a partir de uma entrevista ----
   app.post('/api/assets/:id/reels/suggest', async (req) => {
     const a = assetRow((req.params as any).id);
-    const b = (req.body ?? {}) as { count?: number; minDur?: number; maxDur?: number; notes?: string };
+    const b = (req.body ?? {}) as { count?: number; minDur?: number; maxDur?: number; notes?: string; viral?: boolean };
     const words = wordsOf(a.id);
     if (!words?.length) throw new AppError(409, 'Este vídeo ainda não foi transcrito.', 'Clique em "Transcrever" e aguarde; os cortes são escolhidos pela fala.');
     const meta = JSON.parse(a.meta);
@@ -80,7 +85,13 @@ export async function studioRoutes(app: FastifyInstance) {
       const r = await generateJson<{ segments: ReelPick[]; note: string }>({
         system: `Você é editor de cortes de entrevistas/podcasts para Reels e TikTok de uma agência brasileira.
 Escolha trechos que funcionem SOZINHOS: começam com uma frase que prende (pergunta, afirmação forte, número, conflito), desenvolvem uma ideia completa e terminam com conclusão — sem depender de contexto anterior.
-Regras: use os índices das frases fornecidas (from/to inclusive); nunca escolha trechos sobrepostos; respeite a duração pedida; não invente nada no título — ele precisa ser fiel ao que a pessoa diz. Prefira os trechos mais fortes primeiro. Se não houver ${count} bons trechos, devolva menos e explique em "note".`,
+${b.viral ? `MODO VIRAL (podcast/entrevista longa):
+- Os 3 primeiros segundos decidem: o trecho precisa ABRIR com tensão (pergunta provocativa, afirmação contraintuitiva, número, erro comum, história pessoal forte). Nada de "bom dia", "então", contexto ou apresentação.
+- Estrutura obrigatória: INÍCIO (gancho) → MEIO (explica/conta/prova) → FIM (conclusão, lição ou frase de efeito que fecha a ideia). Proibido terminar no meio do raciocínio ou com "e aí…".
+- hookSentence: se houver, DENTRO do trecho, uma frase curta ainda mais forte que a primeira (até ~6 s), indique o índice dela para virar teaser de abertura; senão -1.
+- score: retenção estimada 0-100 (gancho, clareza, emoção, utilidade, frase final). Ordene do maior para o menor.
+- Prefira temas universais e úteis (dinheiro, carreira, negócios, relacionamentos, erros, segredos), que geram compartilhamento e salvamento.
+` : ''}Regras: use os índices das frases fornecidas (from/to inclusive); nunca escolha trechos sobrepostos; respeite a duração pedida; não invente nada no título — ele precisa ser fiel ao que a pessoa diz. Prefira os trechos mais fortes primeiro. Se não houver ${count} bons trechos, devolva menos e explique em "note".`,
         prompt: `${brandContext(brand.name, brand.profile).text}
 # Vídeo "${a.name}" (${Math.round(meta.duration ?? 0)} s)
 Quero ${count} cortes, cada um entre ${minDur} e ${maxDur} segundos.${b.notes ? `\nPedido do editor: ${String(b.notes).slice(0, 500)}` : ''}
@@ -93,7 +104,10 @@ ${sents.map((s) => `[${s.i}] ${s.s.toFixed(1)}–${s.e.toFixed(1)} ${s.text}`).j
       return {
         note: r.data.note,
         model: r.model,
-        segments: picks.map((p) => ({ ...p, ...sentenceRange(sents, p.from, p.to, meta.duration ?? p.end + 1), text: sents.slice(p.from, p.to + 1).map((s) => s.text).join(' ') })),
+        segments: picks.map((p) => {
+          const hr = b.viral ? hookRange(p, sents, meta.duration ?? p.end + 1) : null;
+          return { ...p, ...sentenceRange(sents, p.from, p.to, meta.duration ?? p.end + 1), hookIn: hr?.in ?? null, hookOut: hr?.out ?? null, hookText: hr ? sents[Number(p.hookSentence)].text : null, text: sents.slice(p.from, p.to + 1).map((s) => s.text).join(' ') };
+        }).sort((x, y) => (y.score ?? 0) - (x.score ?? 0)),
       };
     } catch (e) {
       if (e instanceof AiError) throw new AppError(503, e.message, e.hint);
@@ -103,7 +117,7 @@ ${sents.map((s) => `[${s.i}] ${s.s.toFixed(1)}–${s.e.toFixed(1)} ${s.text}`).j
 
   app.post('/api/assets/:id/reels/create', async (req) => {
     const a = assetRow((req.params as any).id);
-    const b = (req.body ?? {}) as { segments: { in: number; out: number; title: string; hook: string }[]; captions?: boolean; logo?: boolean; hookTitle?: boolean; removePauses?: boolean };
+    const b = (req.body ?? {}) as { segments: { in: number; out: number; title: string; hook: string; hookIn?: number | null; hookOut?: number | null }[]; captions?: boolean; logo?: boolean; hookTitle?: boolean; removePauses?: boolean; viral?: boolean; autoExport?: boolean };
     if (!b.segments?.length) throw badRequest('Escolha ao menos um corte.');
     const meta = JSON.parse(a.meta);
     const words = wordsOf(a.id) ?? [];
@@ -114,7 +128,10 @@ ${sents.map((s) => `[${s.i}] ${s.s.toFixed(1)}–${s.e.toFixed(1)} ${s.text}`).j
       if (lr) assets[lr.id] = rowToAsset(lr);
     }
     const ctx: ActionContext = { transcripts: { [a.id]: words }, assets, brand: { colors: brand.profile.colors.map((c) => c.hex), logoAssetId: brand.profile.logoAssetId, font: undefined } };
-    const created: { id: string; name: string; warnings: string[] }[] = [];
+    const created: { id: string; name: string; warnings: string[]; jobId: string | null }[] = [];
+    // Exportação automática: usa a aceleração de hardware se uma codificação de teste funcionar.
+    const encs = b.autoExport ? await availableEncoders() : [];
+    const encoder = encs.includes('h264_qsv') ? 'h264_qsv' : encs.includes('h264_nvenc') ? 'h264_nvenc' : 'libx264';
     b.segments.slice(0, 6).forEach((s, k) => {
       const inn = Math.max(0, Number(s.in) || 0);
       const out = Math.min(meta.duration ?? Infinity, Number(s.out) || 0);
@@ -122,12 +139,22 @@ ${sents.map((s) => `[${s.i}] ${s.s.toFixed(1)}–${s.e.toFixed(1)} ${s.text}`).j
       let tl: Timeline = emptyTimeline('9:16');
       tl.captions.style = { ...DEFAULT_CAPTION_STYLE, ...(brand.profile.captionStyle ?? {}), posY: defaultCaptionY(tl.format) };
       if (!brand.profile.captionStyle && brand.profile.colors[0]) tl.captions.style.highlightColor = brand.profile.colors[0].hex;
-      tl.clips = [{ id: uid('c_'), assetId: a.id, in: inn, out, speed: 1, volume: 1, fit: 'cover', focusX: 0.5, focusY: 0.5 }];
+      const base = { assetId: a.id, speed: 1, volume: 1, fit: 'cover' as const, focusX: 0.5, focusY: 0.5 };
+      tl.clips = [{ id: uid('c_'), ...base, in: inn, out }];
+      if (b.viral) {
+        tl.captions.style = { ...tl.captions.style, ...VIRAL_CAPTION };
+        // Abertura com a frase mais forte (teaser) e corte com flash para o trecho completo.
+        const hi = Number(s.hookIn), ho = Number(s.hookOut);
+        if (Number.isFinite(hi) && Number.isFinite(ho) && ho - hi >= 1 && ho - hi <= 8) {
+          tl.clips = [{ id: uid('c_'), ...base, in: hi, out: ho, zoom: { from: 1.12, to: 1.18 } }, { ...tl.clips[0], transition: { type: 'flash', duration: 0.3 } }];
+        }
+      }
       const steps: EditAction[] = [];
       if (b.removePauses !== false && words.length) steps.push({ type: 'remove_pauses' });
       if (b.captions !== false && words.length) steps.push({ type: 'captions' });
       if (b.logo !== false && brand.profile.logoAssetId && assets[brand.profile.logoAssetId]) steps.push({ type: 'logo' });
       if (b.hookTitle !== false && s.hook?.trim()) steps.push({ type: 'text', text: s.hook.trim(), start: 0, duration: 3, kind: 'title', anim: 'pop' });
+      if (b.viral) steps.push({ type: 'filter', preset: 'cinema' }, { type: 'rhythm', shotLength: 2.6 }, { type: 'denoise', level: 'light' });
       const warnings: string[] = [];
       for (const st of steps) {
         try {
@@ -139,7 +166,12 @@ ${sents.map((s) => `[${s.i}] ${s.s.toFixed(1)}–${s.e.toFixed(1)} ${s.text}`).j
       const id = uid('p_');
       const name = `${(s.title || `Corte ${k + 1}`).slice(0, 80)} — ${a.name.replace(/\.[^.]+$/, '')}`;
       db.prepare("INSERT INTO projects (id, brand_id, name, status, timeline, revision, created_at, updated_at) VALUES (?, ?, ?, 'draft', ?, 0, ?, ?)").run(id, a.brand_id, name, JSON.stringify(tl), now(), now());
-      created.push({ id, name, warnings });
+      let jobId: string | null = null;
+      if (b.autoExport) {
+        const settings = { width: tl.format.width, height: tl.format.height, fps: tl.format.fps, quality: 'high' as const, encoder: encoder as any };
+        jobId = enqueue({ type: 'render', title: `Exportando "${name}" (${settings.width}x${settings.height})`, brandId: a.brand_id, projectId: id, payload: { projectId: id, timeline: tl, settings, revision: 0, name } });
+      }
+      created.push({ id, name, warnings, jobId });
     });
     return { created };
   });

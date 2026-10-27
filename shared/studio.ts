@@ -47,7 +47,23 @@ export interface ReelPick {
   title: string;
   hook: string;
   why: string;
+  /** Modo viral: frase de impacto DENTRO do trecho usada como abertura (cold open); -1 = sem. */
+  hookSentence?: number;
+  score?: number;
+  structure?: { inicio: string; meio: string; fim: string };
 }
+
+/** Abertura (cold open): só vale se a frase estiver dentro do trecho, não for a 1ª e durar até 7 s. */
+export function hookRange(p: { from: number; to: number; hookSentence?: number }, sents: Sentence[], duration: number): { in: number; out: number } | null {
+  const h = Math.round(Number(p.hookSentence ?? -1));
+  if (!(h > p.from && h <= p.to)) return null;
+  const s = sents[h];
+  if (!s || s.e - s.s > 7 || s.e - s.s < 1.2) return null;
+  return sentenceRange(sents, h, h, duration);
+}
+
+/** Estilo de legenda dos cortes virais: grande, centralizada, 2–3 palavras por vez, palavra falada em destaque. */
+export const VIRAL_CAPTION = { preset: 'highlight' as const, uppercase: true, bold: true, size: 9, maxWordsPerCue: 3, maxCharsPerLine: 14, outline: 12, shadow: 2, posY: 0.62 };
 
 /** Valida a escolha da IA: índices válidos, sem sobreposição, duração dentro do limite (tira frases do fim se passar). */
 export function sanitizePicks(picks: ReelPick[], sents: Sentence[], minDur: number, maxDur: number): (ReelPick & { start: number; end: number; warning: string | null })[] {
