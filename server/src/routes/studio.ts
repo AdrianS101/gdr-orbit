@@ -8,7 +8,7 @@ import { AppError, badRequest, notFound } from '../lib/errors.ts';
 import { assetPath } from '../lib/storage.ts';
 import { rowToAsset, rowToBrand } from '../lib/mappers.ts';
 import { DEFAULT_CAPTION_STYLE, defaultCaptionY, emptyTimeline, uid } from '../../../shared/timeline.ts';
-import { hookRange, rhythmFromCuts, sanitizePicks, sentenceRange, splitSentences, VIRAL_CAPTION, type ReelPick, type RhythmProfile } from '../../../shared/studio.ts';
+import { hookRange, PODCAST_CAPTION, rhythmFromCuts, sanitizePicks, sentenceRange, splitSentences, VIRAL_CAPTION, type ReelPick, type RhythmProfile } from '../../../shared/studio.ts';
 import { enqueue } from '../jobs/queue.ts';
 import { availableEncoders } from '../lib/ffmpeg.ts';
 import { applyAction, type ActionContext, type EditAction } from '../../../shared/edit-actions.ts';
@@ -117,7 +117,7 @@ ${sents.map((s) => `[${s.i}] ${s.s.toFixed(1)}–${s.e.toFixed(1)} ${s.text}`).j
 
   app.post('/api/assets/:id/reels/create', async (req) => {
     const a = assetRow((req.params as any).id);
-    const b = (req.body ?? {}) as { segments: { in: number; out: number; title: string; hook: string; hookIn?: number | null; hookOut?: number | null }[]; captions?: boolean; logo?: boolean; hookTitle?: boolean; removePauses?: boolean; viral?: boolean; autoExport?: boolean };
+    const b = (req.body ?? {}) as { segments: { in: number; out: number; title: string; hook: string; hookIn?: number | null; hookOut?: number | null }[]; captions?: boolean; logo?: boolean; hookTitle?: boolean; removePauses?: boolean; viral?: boolean; autoExport?: boolean; style?: 'impacto' | 'podcast' };
     if (!b.segments?.length) throw badRequest('Escolha ao menos um corte.');
     const meta = JSON.parse(a.meta);
     const words = wordsOf(a.id) ?? [];
@@ -128,6 +128,8 @@ ${sents.map((s) => `[${s.i}] ${s.s.toFixed(1)}–${s.e.toFixed(1)} ${s.text}`).j
       if (lr) assets[lr.id] = rowToAsset(lr);
     }
     const ctx: ActionContext = { transcripts: { [a.id]: words }, assets, brand: { colors: brand.profile.colors.map((c) => c.hex), logoAssetId: brand.profile.logoAssetId, font: undefined } };
+    const podcast = b.style === 'podcast';
+    const handle = (db.prepare("SELECT username FROM social_accounts WHERE brand_id = ? AND network = 'instagram' AND username IS NOT NULL AND status != 'manual' LIMIT 1").get(a.brand_id) as any)?.username ?? null;
     const created: { id: string; name: string; warnings: string[]; jobId: string | null }[] = [];
     // Exportação automática: usa a aceleração de hardware se uma codificação de teste funcionar.
     const encs = b.autoExport ? await availableEncoders() : [];
@@ -142,7 +144,7 @@ ${sents.map((s) => `[${s.i}] ${s.s.toFixed(1)}–${s.e.toFixed(1)} ${s.text}`).j
       const base = { assetId: a.id, speed: 1, volume: 1, fit: 'cover' as const, focusX: 0.5, focusY: 0.5 };
       tl.clips = [{ id: uid('c_'), ...base, in: inn, out }];
       if (b.viral) {
-        tl.captions.style = { ...tl.captions.style, ...VIRAL_CAPTION };
+        tl.captions.style = { ...tl.captions.style, ...(podcast ? PODCAST_CAPTION : VIRAL_CAPTION) };
         // Abertura com a frase mais forte (teaser) e corte com flash para o trecho completo.
         const hi = Number(s.hookIn), ho = Number(s.hookOut);
         if (Number.isFinite(hi) && Number.isFinite(ho) && ho - hi >= 1 && ho - hi <= 8) {
@@ -151,16 +153,25 @@ ${sents.map((s) => `[${s.i}] ${s.s.toFixed(1)}–${s.e.toFixed(1)} ${s.text}`).j
       }
       const steps: EditAction[] = [];
       if (b.removePauses !== false && words.length) steps.push({ type: 'remove_pauses' });
-      if (b.captions !== false && words.length) steps.push({ type: 'captions' });
+      if (b.captions !== false && words.length) steps.push(podcast ? { type: 'captions', highlightColor: '#FFFFFF', uppercase: false } : { type: 'captions' });
       if (b.logo !== false && brand.profile.logoAssetId && assets[brand.profile.logoAssetId]) steps.push({ type: 'logo' });
-      if (b.hookTitle !== false && s.hook?.trim()) steps.push({ type: 'text', text: s.hook.trim(), start: 0, duration: 3, kind: 'title', anim: 'pop' });
-      if (b.viral) steps.push({ type: 'filter', preset: 'cinema' }, { type: 'rhythm', shotLength: 2.6 }, { type: 'denoise', level: 'light' });
+      if (b.hookTitle !== false && s.hook?.trim() && !podcast) steps.push({ type: 'text', text: s.hook.trim(), start: 0, duration: 3, kind: 'title', anim: 'pop' });
+      if (b.viral && podcast) steps.push({ type: 'filter', preset: 'podcast' }, { type: 'rhythm', shotLength: 6 }, { type: 'denoise', level: 'light' });
+      else if (b.viral) steps.push({ type: 'filter', preset: 'cinema' }, { type: 'rhythm', shotLength: 2.6 }, { type: 'denoise', level: 'light' });
       const warnings: string[] = [];
       for (const st of steps) {
         try {
           tl = applyAction(tl, st, ctx).timeline;
         } catch (e) {
           warnings.push((e as Error).message);
+        }
+      }
+      if (b.viral && podcast) {
+        // Movimento de câmera lento (push-in) no lugar de cortes secos; alterna o enquadramento a cada plano.
+        tl.clips = tl.clips.map((c, i) => ({ ...c, zoom: i % 2 === 0 ? { from: 1, to: 1.07 } : { from: 1.1, to: 1.16 } }));
+        if (handle) {
+          const total = tl.clips.reduce((n, c) => n + (c.out - c.in) / c.speed, 0);
+          tl.texts = [...(tl.texts ?? []), { id: uid('t_'), start: 0, end: total, text: '@' + handle.toUpperCase(), kind: 'caption', anim: 'none', x: 0.5, y: PODCAST_CAPTION.posY - 0.045, size: 1.9, color: '#D8D8D8', bg: '', font: PODCAST_CAPTION.font }];
         }
       }
       const id = uid('p_');

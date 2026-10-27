@@ -63,6 +63,9 @@ export function hookRange(p: { from: number; to: number; hookSentence?: number }
 }
 
 /** Estilo de legenda dos cortes virais: grande, centralizada, 2–3 palavras por vez, palavra falada em destaque. */
+/** Estilo "podcast cinematográfico" (referência JotaJota): minúsculas, branca, sem contorno, palavra falada cresce, baixa no quadro. */
+export const PODCAST_CAPTION = { preset: 'pop' as const, uppercase: false, bold: true, size: 7, maxWordsPerCue: 3, maxCharsPerLine: 16, outline: 0, shadow: 3, posY: 0.8, textColor: '#FFFFFF', highlightColor: '#FFFFFF', font: 'Segoe UI Black' };
+
 export const VIRAL_CAPTION = { preset: 'highlight' as const, uppercase: true, bold: true, size: 9, maxWordsPerCue: 3, maxCharsPerLine: 14, outline: 12, shadow: 2, posY: 0.62 };
 
 /** Valida a escolha da IA: índices válidos, sem sobreposição, duração dentro do limite (tira frases do fim se passar). */

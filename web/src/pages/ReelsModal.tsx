@@ -26,6 +26,7 @@ export function ReelsModal({ asset, onClose }: { asset: Asset; onClose: () => vo
   const [opts, setOpts] = useState({ removePauses: true, captions: true, logo: true, hookTitle: true });
   const [viral, setViral] = useState(true);
   const [autoExport, setAutoExport] = useState(true);
+  const [look, setLook] = useState<'impacto' | 'podcast'>('podcast');
   const [stage, setStage] = useState('');
 
   useEffect(() => onJob((j) => j.id === jobId && j.status === 'done' && setTranscribed(true)), [jobId]);
@@ -61,7 +62,7 @@ export function ReelsModal({ asset, onClose }: { asset: Asset; onClose: () => vo
         return;
       }
       setStage(`Montando ${sug.segments.length} corte(s) com legenda, filtro e ritmo…`);
-      finish(await api.post(`/api/assets/${asset.id}/reels/create`, { segments: sug.segments, ...opts, viral: true, autoExport }));
+      finish(await api.post(`/api/assets/${asset.id}/reels/create`, { segments: sug.segments, ...opts, viral: true, autoExport, style: look }));
     } catch (e) {
       showError(e);
     } finally {
@@ -73,7 +74,7 @@ export function ReelsModal({ asset, onClose }: { asset: Asset; onClose: () => vo
     const picked = (segs ?? []).filter((_, i) => chosen[i]);
     setBusy(true);
     api
-      .post<{ created: { id: string; name: string; warnings: string[]; jobId?: string | null }[] }>(`/api/assets/${asset.id}/reels/create`, { segments: picked, ...opts, viral, autoExport })
+      .post<{ created: { id: string; name: string; warnings: string[]; jobId?: string | null }[] }>(`/api/assets/${asset.id}/reels/create`, { segments: picked, ...opts, viral, autoExport, style: look })
       .then((r) => {
         finish(r);
       }, showError)
@@ -114,6 +115,10 @@ export function ReelsModal({ asset, onClose }: { asset: Asset; onClose: () => vo
             </div>
             <div className="row wrap small" style={{ gap: 14 }}>
               <label className="row"><input type="checkbox" checked={viral} onChange={(e) => setViral(e.target.checked)} /> Estilo viral (gancho de abertura, legenda grande, filtro cinematográfico, cortes com zoom)</label>
+              <select className="select sm" style={{ width: 'auto' }} value={look} onChange={(e) => setLook(e.target.value as 'impacto' | 'podcast')} aria-label="Estilo">
+                <option value="podcast">Estilo: Podcast cinematográfico (legenda discreta, cor de cinema, câmera lenta)</option>
+                <option value="impacto">Estilo: Impacto (legenda grande colorida, cortes rápidos com zoom)</option>
+              </select>
               <label className="row"><input type="checkbox" checked={autoExport} onChange={(e) => setAutoExport(e.target.checked)} /> Já exportar os MP4</label>
               {stage && <span className="faint">{stage}</span>}
             </div>

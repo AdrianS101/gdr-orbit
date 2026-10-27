@@ -13,6 +13,7 @@ export const COLOR_PRESETS: Record<string, { label: string; v: Omit<ColorAdjust,
   quente: { label: 'Quente', v: { brightness: 1.03, contrast: 1.04, saturation: 1.1, temperature: 0.5 } },
   frio: { label: 'Frio', v: { brightness: 1, contrast: 1.04, saturation: 0.95, temperature: -0.5 } },
   suave: { label: 'Suave', v: { brightness: 1.05, contrast: 0.9, saturation: 0.9, temperature: 0.1 } },
+  podcast: { label: 'Podcast cinematográfico', v: { brightness: 0.94, contrast: 1.14, saturation: 0.55, temperature: 0.14 } },
   pb: { label: 'Preto e branco', v: { brightness: 1, contrast: 1.15, saturation: 0, temperature: 0 } },
 };
 
