@@ -29,7 +29,15 @@ export function ReelsModal({ asset, onClose }: { asset: Asset; onClose: () => vo
   const [look, setLook] = useState<'impacto' | 'podcast'>('podcast');
   const [stage, setStage] = useState('');
 
+  // "1 clique" num vídeo ainda sem transcrição: transcreve e, ao terminar, segue sozinho até exportar os cortes.
+  const [pendingOneClick, setPendingOneClick] = useState(false);
   useEffect(() => onJob((j) => j.id === jobId && j.status === 'done' && setTranscribed(true)), [jobId]);
+  useEffect(() => {
+    if (transcribed && pendingOneClick) {
+      setPendingOneClick(false);
+      oneClick();
+    }
+  }, [transcribed, pendingOneClick]); // eslint-disable-line react-hooks/exhaustive-deps
   const job = jobId ? jobs[jobId] : null;
 
   const transcribe = () => api.post<{ jobId: string }>(`/api/assets/${asset.id}/transcribe`, {}).then((r) => setJobId(r.jobId), showError);
@@ -98,8 +106,17 @@ export function ReelsModal({ asset, onClose }: { asset: Asset; onClose: () => vo
       <div className="col" style={{ gap: 14 }}>
         {!transcribed ? (
           <div className="col" style={{ gap: 8 }}>
-            <p className="small">Os cortes são escolhidos pela fala. Primeiro é preciso transcrever o vídeo (local, sem custo; leva mais ou menos a duração do vídeo).</p>
-            {job ? <><Progress value={job.progress} indeterminate={job.status === 'queued'} /><span className="faint small">{job.message}</span>{job.status === 'failed' && <span className="small" style={{ color: 'var(--danger)' }}>{job.error}</span>}</> : <button className="btn primary" style={{ alignSelf: 'flex-start' }} onClick={transcribe}>Transcrever agora</button>}
+            <p className="small">Os cortes são escolhidos pela fala. Este vídeo ainda não foi transcrito: o GDR Digital transcreve primeiro (no seu computador, sem custo; leva mais ou menos a duração do vídeo) e depois segue sozinho.</p>
+            {job ? <><Progress value={job.progress} indeterminate={job.status === 'queued'} /><span className="faint small">{job.message}{pendingOneClick ? ' — depois gera os cortes virais automaticamente.' : ''}</span>{job.status === 'failed' && <span className="small" style={{ color: 'var(--danger)' }}>{job.error}</span>}</> : (
+              <div className="row wrap" style={{ gap: 8 }}>
+                <button className="btn primary" onClick={() => { setPendingOneClick(true); transcribe(); }}><Zap size={16} /> Gerar cortes virais (1 clique)</button>
+                <button className="btn" onClick={transcribe}>Só transcrever</button>
+                <select className="select sm" style={{ width: 'auto' }} value={look} onChange={(e) => setLook(e.target.value as 'impacto' | 'podcast')} aria-label="Estilo">
+                  <option value="podcast">Estilo: Podcast cinematográfico</option>
+                  <option value="impacto">Estilo: Impacto</option>
+                </select>
+              </div>
+            )}
           </div>
         ) : (
           <>
