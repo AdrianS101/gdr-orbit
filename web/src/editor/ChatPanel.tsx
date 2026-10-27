@@ -3,7 +3,7 @@
 // As ações rápidas usam o mesmo motor, sem IA e sem custo.
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Send, Sparkles, Check, Wand2 } from 'lucide-react';
+import { Send, Sparkles, Check, Wand2, Undo2 } from 'lucide-react';
 import { useEditor } from './store.ts';
 import { api } from '../lib/api.ts';
 import { useApp, showError } from '../lib/store.ts';
@@ -19,6 +19,9 @@ interface Msg {
   applied?: string[];
   errors?: string[];
   model?: string;
+  /** Aplicado automaticamente (a IA decide e edita na hora). */
+  auto?: boolean;
+  undone?: boolean;
 }
 
 function ctx(): ActionContext {
@@ -96,19 +99,29 @@ export function ChatPanel() {
   const send = async (message = text) => {
     if (!message.trim() || busy) return;
     setText('');
-    const history = msgs.map((m) => ({ role: m.role, text: m.text }));
+    // O histórico leva o que foi aplicado de fato, para pedidos como "mais forte" ou "tira isso".
+    const history = msgs.map((m) => ({ role: m.role, text: m.applied?.length ? `${m.text}
+[aplicado: ${m.applied.join('; ')}]${m.undone ? ' [o usuário DESFEZ isso]' : ''}` : m.text }));
     setMsgs((m) => [...m, { role: 'user', text: message }]);
     setBusy(true);
     try {
       await useEditor.getState().save();
       const r = await api.post(`/api/projects/${project.id}/edit-chat`, { message, history });
-      setMsgs((m) => [...m, { role: 'assistant', text: r.reply, question: r.question || undefined, actions: r.actions, selected: r.actions.map(() => true), model: r.model }]);
+      // A IA já decidiu: aplica na hora, cada ação como um passo de desfazer (o botão "Desfazer" reverte tudo).
+      const done = r.actions?.length ? runActions(r.actions) : { applied: [], errors: [] };
+      setMsgs((m) => [...m, { role: 'assistant', text: r.reply, question: r.question || undefined, actions: r.actions, selected: r.actions.map(() => true), model: r.model, applied: done.applied, errors: done.errors, auto: true }]);
     } catch (e) {
       showError(e);
       setMsgs((m) => [...m, { role: 'assistant', text: `Não consegui planejar: ${(e as Error).message}` }]);
     } finally {
       setBusy(false);
     }
+  };
+
+  const undoAll = (i: number) => {
+    const n = msgs[i].applied?.length ?? 0;
+    for (let k = 0; k < n; k++) useEditor.getState().undo();
+    setMsgs((all) => all.map((x, k) => (k === i ? { ...x, undone: true } : x)));
   };
 
   const apply = (i: number) => {
@@ -154,7 +167,19 @@ export function ChatPanel() {
           <div key={i} className={`chat-msg ${m.role}`}>
             <div>{m.text}</div>
             {m.question && <div className="small" style={{ color: 'var(--warning)', marginTop: 6 }}>{m.question}</div>}
-            {m.actions && m.actions.length > 0 && (
+            {m.auto && !!m.applied?.length && (
+              <div className="col" style={{ gap: 3, marginTop: 8 }}>
+                {m.applied.map((l, k) => <span key={k} className="small" style={{ color: m.undone ? 'var(--text-3)' : 'var(--success)', textDecoration: m.undone ? 'line-through' : undefined }}>✓ {l}</span>)}
+                {m.errors?.map((e, k) => <span key={'e' + k} className="small" style={{ color: 'var(--danger)' }}>{e}</span>)}
+                {!m.undone ? (
+                  <button className="btn ghost sm" style={{ alignSelf: 'flex-start' }} onClick={() => undoAll(i)}><Undo2 size={13} /> Desfazer</button>
+                ) : (
+                  <span className="faint small">Desfeito.</span>
+                )}
+              </div>
+            )}
+            {m.auto && !m.applied?.length && !!m.errors?.length && m.errors.map((e, k) => <div key={k} className="small" style={{ color: 'var(--danger)' }}>{e}</div>)}
+            {!m.auto && m.actions && m.actions.length > 0 && (
               <div className="col" style={{ gap: 4, marginTop: 8 }}>
                 {m.actions.map((a, k) => (
                   <label key={k} className="row small" style={{ alignItems: 'flex-start' }}>
@@ -181,7 +206,7 @@ export function ChatPanel() {
         ))}
         {busy && (
           <div className="chat-msg assistant row">
-            <Spinner size={14} /> Analisando o vídeo e planejando…
+            <Spinner size={14} /> Entendendo o pedido e editando…
           </div>
         )}
         <div ref={endRef} />
