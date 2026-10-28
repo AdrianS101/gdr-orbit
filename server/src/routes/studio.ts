@@ -18,6 +18,8 @@ import type { Asset, CaptionWord, Timeline } from '../../../shared/types.ts';
 import { generateJson, AiError } from '../ai/providers.ts';
 import { brandContext } from '../ai/copy.ts';
 
+const mmss = (t: number) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+
 function assetRow(id: string) {
   const r = db.prepare('SELECT * FROM assets WHERE id = ?').get(id) as any;
   if (!r) throw notFound('Arquivo');
@@ -81,12 +83,30 @@ export async function studioRoutes(app: FastifyInstance) {
     const meta = JSON.parse(a.meta);
     // Quantidade automática: a IA lê a conversa inteira e devolve todos os trechos realmente bons.
     const auto = b.count === 'auto' || b.count === undefined;
-    const count = auto ? 15 : Math.max(1, Math.min(15, Math.round(Number(b.count) || 3)));
+    const count = auto ? 20 : Math.max(1, Math.min(20, Math.round(Number(b.count) || 3)));
     const LEN: Record<string, [number, number]> = { auto: [15, 90], lt30: [12, 30], '30-60': [30, 60], '60-90': [60, 90], '90-180': [90, 180] };
     const [minDur, maxDur] = b.length ? LEN[b.length] ?? LEN.auto : [Math.max(10, Number(b.minDur) || 20), Math.max((Number(b.minDur) || 20) + 5, Math.min(180, Number(b.maxDur) || 60))];
     const sents = splitSentences(words);
     const brand = rowToBrand(db.prepare('SELECT * FROM brands WHERE id = ?').get(a.brand_id));
     try {
+      // Conversas longas são lidas em janelas (~40 mil caracteres, com sobreposição), e os melhores trechos de
+      // todas as janelas são unidos e ranqueados — assim um podcast de 1h+ é lido inteiro.
+      const lines = sents.map((q) => `[${q.i}] ${q.s.toFixed(1)}–${q.e.toFixed(1)} ${q.text}`);
+      const windows: [number, number][] = [];
+      for (let i = 0; i < lines.length; ) {
+        let j = i, size = 0;
+        while (j < lines.length && size + lines[j].length < 40000) size += lines[j++].length + 1;
+        j = Math.max(j, i + 1);
+        windows.push([i, j]);
+        if (j >= lines.length) break;
+        i = Math.max(i + 1, j - 12); // 12 frases de sobreposição para não partir uma história no meio
+      }
+      const perWindow = auto ? 8 : Math.min(count, Math.ceil(count / windows.length) + 2);
+      const all: ReelPick[] = [];
+      const notes: string[] = [];
+      let model = '';
+      for (const [wi, [i0, i1]] of windows.entries()) {
+        const part = windows.length > 1 ? `\n(Parte ${wi + 1} de ${windows.length} da conversa: ${mmss(sents[i0].s)}–${mmss(sents[i1 - 1].e)}. Escolha só trechos desta parte; até ${perWindow}.)` : '';
       const r = await generateJson<{ segments: ReelPick[]; note: string }>({
         system: `Você é editor de cortes de entrevistas/podcasts para Reels e TikTok de uma agência brasileira.
 Escolha trechos que funcionem SOZINHOS: começam com uma frase que prende (pergunta, afirmação forte, número, conflito), desenvolvem uma ideia completa e terminam com conclusão — sem depender de contexto anterior.
@@ -103,11 +123,17 @@ Se o editor pedir MOMENTOS EXATOS (ex.: "02:10 a 03:00") ou assuntos, gere esses
 # Vídeo "${a.name}" (${Math.round(meta.duration ?? 0)} s)
 ${auto ? 'Quantidade: automática (todos os bons)' : `Quero ${count} cortes`}, cada um entre ${minDur} e ${maxDur} segundos.${b.notes ? `\nPedido do editor: ${String(b.notes).slice(0, 500)}` : ''}${b.topics ? `\nAssuntos que devem aparecer: ${String(b.topics).slice(0, 300)}` : ''}${b.moments ? `\nMomentos/instruções do editor (prioridade): ${String(b.moments).slice(0, 1500)}` : ''}
 # Frases (índice, início–fim em segundos, texto)
-${sents.map((s) => `[${s.i}] ${s.s.toFixed(1)}–${s.e.toFixed(1)} ${s.text}`).join('\n').slice(0, 60000)}`,
+${lines.slice(i0, i1).join('\n')}${part}`,
         schema: PICK_SCHEMA,
         maxTokens: 9000,
       });
-      let picks = sanitizePicks(r.data.segments ?? [], sents, minDur, maxDur).slice(0, count);
+        all.push(...(r.data.segments ?? []).filter((p) => p.from >= i0 && p.to < i1));
+        if (r.data.note) notes.push(r.data.note);
+        model = r.model;
+      }
+      // Une as janelas: melhores primeiro, sem sobreposição.
+      all.sort((x, y) => (y.score ?? 0) - (x.score ?? 0));
+      let picks = sanitizePicks(auto ? all.filter((p) => (p.score ?? 100) >= 55) : all, sents, minDur, maxDur).slice(0, count);
       // Intervalos escritos pelo editor ("02:10 a 03:00") viram cortes garantidos, ajustados para frases inteiras.
       for (const m of String(b.moments ?? '').matchAll(/(\d{1,2}:\d{2}(?::\d{2})?)\s*(?:-|–|a|até|ate)\s*(\d{1,2}:\d{2}(?::\d{2})?)/gi)) {
         const sec = (t: string) => t.split(':').map(Number).reduce((n, x) => n * 60 + x, 0);
@@ -117,10 +143,9 @@ ${sents.map((s) => `[${s.i}] ${s.s.toFixed(1)}–${s.e.toFixed(1)} ${s.text}`).j
         if (!idx.length || picks.some((p) => !(idx[idx.length - 1] < p.from || idx[0] > p.to))) continue;
         picks.unshift({ from: idx[0], to: idx[idx.length - 1], start: sents[idx[0]].s, end: sents[idx[idx.length - 1]].e, title: `Corte pedido (${m[1]}–${m[2]})`, hook: '', why: 'Momento indicado por você.', score: 100, warning: null } as any);
       }
-      const truncated = sents.map((q) => `[${q.i}] ${q.s.toFixed(1)}–${q.e.toFixed(1)} ${q.text}`).join('\n').length > 60000;
       return {
-        note: [r.data.note, truncated ? 'Conversa muito longa: a IA leu os primeiros ~60 mil caracteres da transcrição. Para cobrir o resto, use "Momentos exatos" ou corte o vídeo em partes.' : ''].filter(Boolean).join(' '),
-        model: r.model,
+        note: [windows.length > 1 ? `Conversa longa lida inteira em ${windows.length} partes.` : '', ...notes.slice(0, 2)].filter(Boolean).join(' '),
+        model,
         segments: picks.map((p) => {
           const hr = b.viral ? hookRange(p, sents, meta.duration ?? p.end + 1) : null;
           return { ...p, ...sentenceRange(sents, p.from, p.to, meta.duration ?? p.end + 1), hookIn: hr?.in ?? null, hookOut: hr?.out ?? null, hookText: hr ? sents[Number(p.hookSentence)].text : null, text: sents.slice(p.from, p.to + 1).map((s) => s.text).join(' ') };
@@ -149,13 +174,13 @@ ${sents.map((s) => `[${s.i}] ${s.s.toFixed(1)}–${s.e.toFixed(1)} ${s.text}`).j
     const animada = b.style === 'animada';
     // Luz automática: mede o vídeo uma vez (proxy) por corte e corrige brilho/contraste.
     const proxyFile = fs.existsSync(assetPath(a.brand_id, a.id, 'proxy')) ? assetPath(a.brand_id, a.id, 'proxy') : assetPath(a.brand_id, a.id, 'original', a.ext);
-    const lights = b.autoLight === false ? [] : await Promise.all(b.segments.slice(0, 15).map((sg) => measureExposure(proxyFile, Number(sg.in) || 0, Math.max(1, (Number(sg.out) || 0) - (Number(sg.in) || 0)))));
+    const lights = b.autoLight === false ? [] : await Promise.all(b.segments.slice(0, 20).map((sg) => measureExposure(proxyFile, Number(sg.in) || 0, Math.max(1, (Number(sg.out) || 0) - (Number(sg.in) || 0)))));
     const handle = (db.prepare("SELECT username FROM social_accounts WHERE brand_id = ? AND network = 'instagram' AND username IS NOT NULL AND status != 'manual' LIMIT 1").get(a.brand_id) as any)?.username ?? null;
     const created: { id: string; name: string; warnings: string[]; jobId: string | null }[] = [];
     // Exportação automática: usa a aceleração de hardware se uma codificação de teste funcionar.
     const encs = b.autoExport ? await availableEncoders() : [];
     const encoder = encs.includes('h264_qsv') ? 'h264_qsv' : encs.includes('h264_nvenc') ? 'h264_nvenc' : 'libx264';
-    b.segments.slice(0, 15).forEach((s, k) => {
+    b.segments.slice(0, 20).forEach((s, k) => {
       const inn = Math.max(0, Number(s.in) || 0);
       const out = Math.min(meta.duration ?? Infinity, Number(s.out) || 0);
       if (out - inn < 3) return;

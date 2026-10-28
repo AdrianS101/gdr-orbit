@@ -137,7 +137,7 @@ export function ClipsPage() {
               <div className="row" style={{ gap: 6 }}>
                 <button className={`chip-btn ${p.countMode === 'auto' ? 'on' : ''}`} onClick={() => setP({ ...p, countMode: 'auto' })}>Automática (a IA decide)</button>
                 <button className={`chip-btn ${p.countMode === 'fixed' ? 'on' : ''}`} onClick={() => setP({ ...p, countMode: 'fixed' })}>Escolher</button>
-                {p.countMode === 'fixed' && <input className="input sm" type="number" min={1} max={15} value={p.count} onChange={(e) => setP({ ...p, count: Number(e.target.value) })} style={{ width: 70 }} />}
+                {p.countMode === 'fixed' && <input className="input sm" type="number" min={1} max={20} value={p.count} onChange={(e) => setP({ ...p, count: Number(e.target.value) })} style={{ width: 70 }} />}
               </div>
             </div>
             <div className="col" style={{ gap: 6 }}>

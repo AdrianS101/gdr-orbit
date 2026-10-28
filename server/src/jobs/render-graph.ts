@@ -87,8 +87,12 @@ export function buildRenderArgs(tl: Timeline, st: RenderSettings, inp: RenderInp
     const zx = zoomExpr(c, cfx, 'it');
     if (zx) post += `zoompan=z='${zx}':x='(iw-iw/zoom)*${f(fx2(c.focusX))}':y='(ih-ih/zoom)*${f(fx2(c.focusY))}':d=1:s=${W}x${H}:fps=${fps},`;
     if (!isNeutral(c.color)) post += `${colorFfmpeg(c.color!)},`;
-    if (cfx.head && cfx.head.type !== 'zoom') post += `fade=t=in:st=0:d=${f(cfx.head.d)}:color=${cfx.head.type === 'flash' ? 'white' : 'black'},`;
-    if (cfx.tail && cfx.tail.type !== 'zoom') post += `fade=t=out:st=${f(D - cfx.tail.d)}:d=${f(cfx.tail.d)}:color=${cfx.tail.type === 'flash' ? 'white' : 'black'},`;
+    // Glitch digital: canais deslocados e ruído só durante a transição (mesma janela de glitchAt).
+    const gl = (a: number, b: number) => `rgbashift=rh=-14:bh=14:enable='between(t,${f(a)},${f(b)})',noise=alls=38:allf=t:enable='between(t,${f(a)},${f(b)})',`;
+    if (cfx.head?.type === 'glitch') post += gl(0, cfx.head.d);
+    if (cfx.tail?.type === 'glitch') post += gl(D - cfx.tail.d, D);
+    if (cfx.head && (cfx.head.type === 'fade' || cfx.head.type === 'flash')) post += `fade=t=in:st=0:d=${f(cfx.head.d)}:color=${cfx.head.type === 'flash' ? 'white' : 'black'},`;
+    if (cfx.tail && (cfx.tail.type === 'fade' || cfx.tail.type === 'flash')) post += `fade=t=out:st=${f(D - cfx.tail.d)}:d=${f(cfx.tail.d)}:color=${cfx.tail.type === 'flash' ? 'white' : 'black'},`;
     // Efeitos de vídeo (mesmas fórmulas da prévia, em shared/effects.ts).
     const ef = c.effects ?? [];
     if (ef.includes('tremor')) {

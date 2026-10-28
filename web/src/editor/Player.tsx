@@ -7,7 +7,7 @@ import JASSUB from 'jassub';
 import { useEditor } from './store.ts';
 import { media } from '../lib/api.ts';
 import { buildAss } from '../../../shared/ass.ts';
-import { barHeight, clipFx, colorSvg, crossAt, fadeAt, shakeAt, isNeutral, musicGainAt, speechIntervals, zoomAt } from '../../../shared/effects.ts';
+import { barHeight, clipFx, colorSvg, crossAt, fadeAt, glitchAt, shakeAt, isNeutral, musicGainAt, speechIntervals, zoomAt } from '../../../shared/effects.ts';
 import { clipAt, layoutClips, overlapOf, sourceTimeAt, timelineDuration, SAFE_AREAS_VERTICAL, type PlacedClip } from '../../../shared/timeline.ts';
 import { audioClipGain, layerDuration, overlayBase, setAt, stackedLayers, transformAt } from '../../../shared/keyframes.ts';
 import type { Asset, AudioClip, LayerClip, Timeline, VideoClip } from '../../../shared/types.ts';
@@ -207,6 +207,7 @@ export function Player({ showSafe }: { showSafe: boolean }) {
   const localT = activePlaced ? Math.max(0, time - activePlaced.start) : 0;
   const zoom = activePlaced && fx ? zoomAt(activePlaced.clip, fx, localT) : 1;
   const fade = fx ? fadeAt(fx, localT) : null;
+  const glitch = fx ? glitchAt(fx, localT) : null;
   const color = activeClip?.color && !isNeutral(activeClip.color) ? colorSvg(activeClip.color) : null;
   // Transição cruzada: o trecho que entra é desenhado por cima, com a mesma conta do xfade da exportação.
   const nextPlaced = activePlaced ? placed[activePlaced.index + 1] : undefined;
@@ -227,7 +228,7 @@ export function Player({ showSafe }: { showSafe: boolean }) {
       v.style.transformOrigin = c ? `${c.focusX * 100}% ${c.focusY * 100}%` : '';
       v.style.filter = filter;
     };
-    paint(act, activeClip, zoom, crossing?.out.tx ?? 0, color ? 'url(#orbit-color)' : '', crossing?.out.ty ?? 0, crossing?.out.scale ?? 1, localT);
+    paint(act, activeClip, zoom, (crossing?.out.tx ?? 0) + (glitch?.jump ?? 0), [color ? 'url(#orbit-color)' : '', glitch ? `drop-shadow(-${glitch.shift / 2}px 0 rgba(255,0,0,.75)) drop-shadow(${glitch.shift / 2}px 0 rgba(0,255,255,.75)) contrast(1.25)` : ''].filter(Boolean).join(' '), crossing?.out.ty ?? 0, crossing?.out.scale ?? 1, localT);
     act.style.opacity = '1';
     act.style.zIndex = '0';
     act.style.clipPath = 'none';

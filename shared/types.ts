@@ -92,7 +92,7 @@ export interface AudioClip {
 }
 
 /** fade/flash/zoom: sem sobreposição (metade em cada trecho). dissolve/wipe/slide: o trecho seguinte começa antes, sobreposto ao anterior. */
-export type TransitionType = 'fade' | 'flash' | 'zoom' | 'dissolve' | 'wipe' | 'slide' | 'wiperight' | 'wipeup' | 'wipedown' | 'slideright' | 'slideup' | 'slidedown' | 'circle' | 'zoomin';
+export type TransitionType = 'fade' | 'flash' | 'zoom' | 'dissolve' | 'wipe' | 'slide' | 'wiperight' | 'wipeup' | 'wipedown' | 'slideright' | 'slideup' | 'slidedown' | 'circle' | 'zoomin' | 'glitch';
 
 /** Efeitos de vídeo por trecho (mesma conta na prévia e na exportação). */
 export type VideoEffect = 'barras' | 'vinheta' | 'tremor';

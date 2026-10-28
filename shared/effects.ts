@@ -73,7 +73,7 @@ export function colorSvg(c: ColorAdjust): { slope: number; intercept: number; ma
 
 // ---------- Zoom e transições ----------
 
-export const TRANSITIONS: Record<TransitionType, string> = { fade: 'Escurecer', flash: 'Flash branco', zoom: 'Zoom', dissolve: 'Dissolver (cruzada)', wipe: 'Cortina ← (cruzada)', wiperight: 'Cortina → (cruzada)', wipeup: 'Cortina ↑ (cruzada)', wipedown: 'Cortina ↓ (cruzada)', slide: 'Deslizar ← (cruzada)', slideright: 'Deslizar → (cruzada)', slideup: 'Deslizar ↑ (cruzada)', slidedown: 'Deslizar ↓ (cruzada)', circle: 'Círculo (cruzada)', zoomin: 'Mergulho (cruzada)' };
+export const TRANSITIONS: Record<TransitionType, string> = { fade: 'Escurecer', flash: 'Flash branco', zoom: 'Zoom', dissolve: 'Dissolver (cruzada)', wipe: 'Cortina ← (cruzada)', wiperight: 'Cortina → (cruzada)', wipeup: 'Cortina ↑ (cruzada)', wipedown: 'Cortina ↓ (cruzada)', slide: 'Deslizar ← (cruzada)', slideright: 'Deslizar → (cruzada)', slideup: 'Deslizar ↑ (cruzada)', slidedown: 'Deslizar ↓ (cruzada)', circle: 'Círculo (cruzada)', zoomin: 'Mergulho (cruzada)', glitch: 'Glitch digital' };
 /** Nome no filtro xfade do FFmpeg. */
 export const XFADE: Record<string, string> = { dissolve: 'fade', wipe: 'wipeleft', wiperight: 'wiperight', wipeup: 'wipeup', wipedown: 'wipedown', slide: 'slideleft', slideright: 'slideright', slideup: 'slideup', slidedown: 'slidedown', circle: 'circleopen', zoomin: 'zoomin' };
 
@@ -139,9 +139,20 @@ export function zoomExpr(c: VideoClip, fx: ClipFx, t = 't'): string | null {
 }
 
 /** Cobertura (0..1) de preto/branco no instante t do trecho. */
+/**
+ * Glitch digital no instante t do trecho: deslocamento dos canais (vermelho ← / ciano →) que oscila a cada quadro.
+ * A exportação usa rgbashift + noise; na prévia o deslocamento é desenhado com sombras coloridas e o ruído não aparece.
+ */
+export function glitchAt(fx: ClipFx, t: number): { shift: number; jump: number } | null {
+  const on = (fx.head?.type === 'glitch' && t < fx.head.d) || (fx.tail?.type === 'glitch' && t > fx.D - fx.tail.d);
+  if (!on) return null;
+  const fr = Math.floor(t * 30);
+  return { shift: 10 + (fr % 3) * 4, jump: 0 };
+}
+
 export function fadeAt(fx: ClipFx, t: number): { color: 'black' | 'white'; alpha: number } | null {
-  if (fx.head && fx.head.type !== 'zoom' && t < fx.head.d) return { color: fx.head.type === 'flash' ? 'white' : 'black', alpha: 1 - t / fx.head.d };
-  if (fx.tail && fx.tail.type !== 'zoom' && t > fx.D - fx.tail.d) return { color: fx.tail.type === 'flash' ? 'white' : 'black', alpha: (t - (fx.D - fx.tail.d)) / fx.tail.d };
+  if (fx.head && (fx.head.type === 'fade' || fx.head.type === 'flash') && t < fx.head.d) return { color: fx.head.type === 'flash' ? 'white' : 'black', alpha: 1 - t / fx.head.d };
+  if (fx.tail && (fx.tail.type === 'fade' || fx.tail.type === 'flash') && t > fx.D - fx.tail.d) return { color: fx.tail.type === 'flash' ? 'white' : 'black', alpha: (t - (fx.D - fx.tail.d)) / fx.tail.d };
   return null;
 }
 
