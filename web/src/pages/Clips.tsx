@@ -34,7 +34,7 @@ export function ClipsPage() {
   const [note, setNote] = useState('');
   const [showPrefs, setShowPrefs] = useState(false);
   const [transcribeJob, setTranscribeJob] = useState<string | null>(null);
-  const [p, setP] = useState({ length: 'auto', countMode: 'auto' as 'auto' | 'fixed', count: 5, format: '9:16', style: 'animada', highlightKeywords: true, autoLight: true, removePauses: true, logo: true, autoExport: true, topics: '', moments: '' });
+  const [p, setP] = useState({ length: 'auto', countMode: 'auto' as 'auto' | 'fixed', count: 5, format: '9:16', style: 'animada', highlightKeywords: true, autoLight: true, autoReframe: true, removePauses: true, logo: true, autoExport: true, topics: '', moments: '' });
 
   const load = () => {
     api.get<Asset>(`/api/assets/${assetId}`).then(setAsset, showError);
@@ -66,8 +66,8 @@ export function ClipsPage() {
       const sug = await api.post<{ segments: any[]; note: string }>(`/api/assets/${asset.id}/reels/suggest`, { count: p.countMode === 'auto' ? 'auto' : p.count, length: p.length, topics: p.topics, moments: p.moments, viral: true });
       setNote(sug.note || '');
       if (!sug.segments.length) return;
-      setBusy(`Montando ${sug.segments.length} corte(s): legenda, luz, ritmo…`);
-      await api.post(`/api/assets/${asset.id}/reels/create`, { segments: sug.segments, viral: true, style: p.style, format: p.format, highlightKeywords: p.highlightKeywords, autoLight: p.autoLight, removePauses: p.removePauses, logo: p.logo, autoExport: p.autoExport, hookTitle: p.style === 'impacto' });
+      setBusy(`Montando ${sug.segments.length} corte(s): enquadramento, legenda, luz, ritmo…`);
+      await api.post(`/api/assets/${asset.id}/reels/create`, { segments: sug.segments, viral: true, style: p.style, format: p.format, highlightKeywords: p.highlightKeywords, autoLight: p.autoLight, autoReframe: p.autoReframe, removePauses: p.removePauses, logo: p.logo, autoExport: p.autoExport, hookTitle: p.style === 'impacto' });
       setShowPrefs(false);
       load();
     } catch (e) {
@@ -154,7 +154,7 @@ export function ClipsPage() {
             </div>
           </div>
           <div className="row wrap small" style={{ gap: 16 }}>
-            {([['highlightKeywords', 'Destacar palavras-chave'], ['autoLight', 'Corrigir a luz automaticamente'], ['removePauses', 'Remover pausas'], ['logo', 'Logo da marca'], ['autoExport', 'Já exportar os MP4']] as const).map(([k, l]) => (
+            {([['autoReframe', 'Enquadrar a pessoa automaticamente'], ['highlightKeywords', 'Destacar palavras-chave'], ['autoLight', 'Corrigir a luz automaticamente'], ['removePauses', 'Remover pausas'], ['logo', 'Logo da marca'], ['autoExport', 'Já exportar os MP4']] as const).map(([k, l]) => (
               <label key={k} className="row"><input type="checkbox" checked={p[k]} onChange={(e) => setP({ ...p, [k]: e.target.checked })} /> {l}</label>
             ))}
           </div>

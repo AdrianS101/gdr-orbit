@@ -11,6 +11,7 @@ import { DEFAULT_CAPTION_STYLE, defaultCaptionY, emptyTimeline, uid } from '../.
 import { ANIMATED_CAPTION, hookRange, markKeywords, PODCAST_CAPTION, rhythmFromCuts, sanitizePicks, sentenceRange, splitSentences, VIRAL_CAPTION, type ReelPick, type RhythmProfile } from '../../../shared/studio.ts';
 import { enqueue } from '../jobs/queue.ts';
 import { exposureCorrection, measureExposure } from '../lib/exposure.ts';
+import { autoReframe } from '../lib/reframe.ts';
 import { colorFromPreset } from '../../../shared/effects.ts';
 import { availableEncoders } from '../lib/ffmpeg.ts';
 import { applyAction, type ActionContext, type EditAction } from '../../../shared/edit-actions.ts';
@@ -159,7 +160,7 @@ ${lines.slice(i0, i1).join('\n')}${part}`,
 
   app.post('/api/assets/:id/reels/create', async (req) => {
     const a = assetRow((req.params as any).id);
-    const b = (req.body ?? {}) as { segments: { in: number; out: number; title: string; hook: string; hookIn?: number | null; hookOut?: number | null; score?: number; keywords?: string[]; why?: string; text?: string; structure?: unknown }[]; captions?: boolean; logo?: boolean; hookTitle?: boolean; removePauses?: boolean; viral?: boolean; autoExport?: boolean; style?: 'impacto' | 'podcast' | 'animada'; format?: '9:16' | '1:1' | '16:9'; highlightKeywords?: boolean; autoLight?: boolean };
+    const b = (req.body ?? {}) as { segments: { in: number; out: number; title: string; hook: string; hookIn?: number | null; hookOut?: number | null; score?: number; keywords?: string[]; why?: string; text?: string; structure?: unknown }[]; captions?: boolean; logo?: boolean; hookTitle?: boolean; removePauses?: boolean; viral?: boolean; autoExport?: boolean; style?: 'impacto' | 'podcast' | 'animada'; format?: '9:16' | '1:1' | '16:9'; highlightKeywords?: boolean; autoLight?: boolean; autoReframe?: boolean };
     if (!b.segments?.length) throw badRequest('Escolha ao menos um corte.');
     const meta = JSON.parse(a.meta);
     const words = wordsOf(a.id) ?? [];
@@ -180,6 +181,7 @@ ${lines.slice(i0, i1).join('\n')}${part}`,
     // Exportação automática: usa a aceleração de hardware se uma codificação de teste funcionar.
     const encs = b.autoExport ? await availableEncoders() : [];
     const encoder = encs.includes('h264_qsv') ? 'h264_qsv' : encs.includes('h264_nvenc') ? 'h264_nvenc' : 'libx264';
+    const pending: { id: string; name: string; tl: Timeline; clipMeta: unknown; warnings: string[] }[] = [];
     b.segments.slice(0, 20).forEach((s, k) => {
       const inn = Math.max(0, Number(s.in) || 0);
       const out = Math.min(meta.duration ?? Infinity, Number(s.out) || 0);
@@ -237,6 +239,17 @@ ${lines.slice(i0, i1).join('\n')}${part}`,
       const id = uid('p_');
       const name = `${(s.title || `Corte ${k + 1}`).slice(0, 80)} — ${a.name.replace(/\.[^.]+$/, '')}`;
       const clipMeta = { assetId: a.id, score: typeof s.score === 'number' ? s.score : null, title: s.title, hook: s.hook, why: s.why ?? null, text: s.text ?? null, in: inn, out, keywords: s.keywords ?? [], structure: s.structure ?? null, style: b.style ?? 'impacto', light: lt ? exposureCorrection(lt) : null };
+      pending.push({ id, name, tl, clipMeta, warnings });
+    });
+    // Enquadramento automático: acha a pessoa em cada trecho e centraliza o recorte nela (um único carregamento do detector).
+    let reframe: { found: number; total: number } | null = null;
+    if (b.autoReframe !== false && pending.length && meta.width && meta.height) {
+      const r = await autoReframe(proxyFile, { width: meta.width, height: meta.height }, pending.map((p) => p.tl));
+      r.timelines.forEach((tl, i) => (pending[i].tl = tl));
+      reframe = { found: r.found, total: r.total };
+    }
+    for (const p of pending) {
+      const { id, name, tl, clipMeta, warnings } = p;
       db.prepare("INSERT INTO projects (id, brand_id, name, status, timeline, revision, created_at, updated_at, clip_meta) VALUES (?, ?, ?, 'draft', ?, 0, ?, ?, ?)").run(id, a.brand_id, name, JSON.stringify(tl), now(), now(), JSON.stringify(clipMeta));
       let jobId: string | null = null;
       if (b.autoExport) {
@@ -244,8 +257,8 @@ ${lines.slice(i0, i1).join('\n')}${part}`,
         jobId = enqueue({ type: 'render', title: `Exportando "${name}" (${settings.width}x${settings.height})`, brandId: a.brand_id, projectId: id, payload: { projectId: id, timeline: tl, settings, revision: 0, name } });
       }
       created.push({ id, name, warnings, jobId });
-    });
-    return { created };
+    }
+    return { created, reframe };
   });
 
   // ---- Ritmo de um vídeo de referência ----
