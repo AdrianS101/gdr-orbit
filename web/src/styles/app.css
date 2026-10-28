@@ -171,8 +171,14 @@ input[type='color'] { width: 34px; height: 30px; border: 1px solid var(--border)
 .toast .h { color: var(--text-2); font-size: 13px; margin-top: 2px; }
 
 /* Jobs */
-.jobs-pop { position: absolute; right: 0; top: calc(100% + 6px); width: 380px; z-index: 60; }
-.job { padding: 10px; border-radius: var(--radius-sm); }
+.jobs-pop { position: absolute; right: 0; top: calc(100% + 6px); width: 480px; max-height: 70vh; overflow-y: auto; z-index: 60; padding: 6px; }
+.jobs-pop-head { display: flex; align-items: baseline; gap: 10px; padding: 8px 10px 10px; border-bottom: 1px solid var(--border); position: sticky; top: -6px; background: var(--surface-2); z-index: 1; }
+.job-title { flex: 1; min-width: 0; text-align: left; background: none; border: 0; color: var(--text); font-size: 13.5px; font-weight: 600; padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+button.job-title:hover { color: var(--accent); text-decoration: underline; }
+span.job-title { cursor: default; }
+.job { padding: 12px 10px; border-radius: var(--radius-sm); }
+.job:hover { background: var(--surface-3); }
+.job .badge { font-size: 11.5px; }
 .job + .job { border-top: 1px solid var(--border); }
 
 /* Mídia */
@@ -377,3 +383,31 @@ input[type='color'] { width: 34px; height: 30px; border: 1px solid var(--border)
 .cal-warn { font-size: 9.5px; font-weight: 700; color: var(--warning); }
 .dm-qrs { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px -4px -4px; }
 .dm-qr { border: 1.5px solid #6b3cf6; color: #6b3cf6; background: #fff; border-radius: 99px; padding: 6px 12px; font-weight: 600; font-size: 13px; }
+
+/* Cortes com IA (estilo Vizard) */
+.chip-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface-2); color: var(--text-2); cursor: pointer; font-size: 13px; transition: all .2s; }
+.chip-btn.on { border-color: var(--accent); color: var(--text); background: rgba(255,122,0,.1); }
+.btn.lg { padding: 12px 18px; font-size: 15px; justify-content: center; }
+.clips-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr) 84px; gap: 14px; align-items: start; }
+.clips-nav { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 4px; max-height: calc(100vh - 120px); overflow: auto; }
+.clips-nav-item { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 8px; color: var(--text-2); }
+.clips-nav-item:hover { background: var(--surface-2); color: var(--text); }
+.clips-nav-n { width: 22px; height: 22px; border-radius: 6px; background: var(--surface-3); display: grid; place-items: center; font-size: 11px; font-weight: 700; flex: none; }
+.clips-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 6px 0; }
+.clip-card { display: flex; gap: 14px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 16px; padding: 14px; transition: border-color .2s; }
+.clip-card.on { border-color: var(--accent); }
+.clip-side { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.clip-video { position: relative; width: 210px; flex: none; border-radius: 12px; overflow: hidden; background: #000; }
+.clip-video video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.clip-video.fmt-9x16 { aspect-ratio: 9 / 16; } .clip-video.fmt-1x1 { aspect-ratio: 1; } .clip-video.fmt-16x9 { aspect-ratio: 16 / 9; width: 300px; }
+.clip-res { position: absolute; top: 8px; left: 8px; font-size: 10.5px; font-weight: 700; background: rgba(0,0,0,.6); color: #fff; padding: 2px 7px; border-radius: 6px; pointer-events: none; }
+.clip-score { font-size: 30px; font-weight: 800; letter-spacing: -.02em; }
+.clip-score small { font-size: 13px; color: var(--text-3); font-weight: 600; margin-left: 2px; }
+.clip-text p { margin: 4px 0; line-height: 1.55; color: var(--text-2); max-height: 9.5em; overflow: auto; }
+.clips-tools { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 4px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; padding: 8px 4px; }
+.clips-tool { display: flex; flex-direction: column; align-items: center; gap: 3px; background: none; border: 0; color: var(--text-2); font-size: 10.5px; padding: 8px 2px; border-radius: 10px; cursor: pointer; text-align: center; width: 100%; }
+.clips-tool:hover { background: var(--surface-2); color: var(--text); }
+.clips-menu { position: absolute; right: 100%; top: 0; margin-right: 6px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 4px; display: flex; flex-direction: column; min-width: 140px; z-index: 5; box-shadow: 0 10px 30px -10px #000; }
+.clips-menu button { background: none; border: 0; color: var(--text); text-align: left; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+.clips-menu button:hover { background: var(--surface-3); }
+@media (max-width: 1000px) { .clips-layout { grid-template-columns: minmax(0, 1fr); } .clips-nav { display: none; } .clips-tools { position: static; flex-direction: row; flex-wrap: wrap; } .clip-card { flex-direction: column; } .clip-video { width: 100%; max-width: 280px; } }

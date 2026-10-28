@@ -25,6 +25,7 @@ import { metricsHandler } from './social/insights.ts';
 import { inboxRoutes } from './social/inbox-routes.ts';
 import { intelligenceRoutes } from './social/intelligence.ts';
 import { studioRoutes } from './routes/studio.ts';
+import { clipRoutes } from './routes/clips.ts';
 import { startInbox } from './social/inbox.ts';
 import { keepAwake } from './lib/keepawake.ts';
 
@@ -66,6 +67,7 @@ await app.register(resultsRoutes);
 await app.register(inboxRoutes);
 await app.register(intelligenceRoutes);
 await app.register(studioRoutes);
+await app.register(clipRoutes);
 
 // Interface compilada (produção). Em desenvolvimento o Vite serve a interface.
 if (fs.existsSync(path.join(config.webDist, 'index.html'))) {

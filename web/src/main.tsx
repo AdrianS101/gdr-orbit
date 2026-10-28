@@ -16,6 +16,7 @@ import { ProjectsPage } from './pages/Projects.tsx';
 import { LibraryPage } from './pages/Library.tsx';
 import { PlannedPage } from './pages/Planned.tsx';
 import { ContentPage } from './pages/Content.tsx';
+import { ClipsPage } from "./pages/Clips.tsx";
 import { ResultsPage } from './pages/Results.tsx';
 import { InboxPage } from './pages/Inbox.tsx';
 import { AutomationsPage } from './pages/Automations.tsx';
@@ -60,6 +61,7 @@ function App() {
         <Route path="/projetos" element={<ProjectsPage />} />
         <Route path="/biblioteca" element={<LibraryPage />} />
         <Route path="/conteudo" element={<ContentPage />} />
+        <Route path="/cortes/:assetId" element={<ClipsPage />} />
         <Route path="/caixa-de-entrada" element={<InboxPage />} />
         <Route path="/automacoes" element={<AutomationsPage />} />
         <Route path="/resultados" element={<ResultsPage />} />

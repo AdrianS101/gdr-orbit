@@ -2,7 +2,7 @@
 // Usa a mesma matemática de enquadramento, posição de logo e legendas (ASS) da prévia.
 import type { AssetMeta, Keyframe, Timeline, Transform } from '../../../shared/types.ts';
 import { clipDuration, even, layoutClips, overlapOf, timelineDuration } from '../../../shared/timeline.ts';
-import { clipFx, colorFfmpeg, isNeutral, speechIntervals, XFADE, zoomExpr } from '../../../shared/effects.ts';
+import { barHeight, clipFx, colorFfmpeg, isNeutral, speechIntervals, XFADE, zoomExpr } from '../../../shared/effects.ts';
 import { denoiseFilter, isAnimated, kfExpr, layerDuration, maxScale, opacityCommands, overlayBase, sortKfs, stackedLayers } from '../../../shared/keyframes.ts';
 
 const fx2 = (v: number) => Math.min(1, Math.max(0, v));
@@ -89,6 +89,18 @@ export function buildRenderArgs(tl: Timeline, st: RenderSettings, inp: RenderInp
     if (!isNeutral(c.color)) post += `${colorFfmpeg(c.color!)},`;
     if (cfx.head && cfx.head.type !== 'zoom') post += `fade=t=in:st=0:d=${f(cfx.head.d)}:color=${cfx.head.type === 'flash' ? 'white' : 'black'},`;
     if (cfx.tail && cfx.tail.type !== 'zoom') post += `fade=t=out:st=${f(D - cfx.tail.d)}:d=${f(cfx.tail.d)}:color=${cfx.tail.type === 'flash' ? 'white' : 'black'},`;
+    // Efeitos de vídeo (mesmas fórmulas da prévia, em shared/effects.ts).
+    const ef = c.effects ?? [];
+    if (ef.includes('tremor')) {
+      const sx = '(1.2*sin(t*23)+0.6*sin(t*37))';
+      const sy = '(1.0*sin(t*29+1)+0.5*sin(t*41))';
+      post += `scale=${even(W * 1.06)}:${even(H * 1.06)},crop=${W}:${H}:x='(iw-${W})*${f(fx2(c.focusX))}-${W}*${sx}/100':y='(ih-${H})*${f(fx2(c.focusY))}-${H}*${sy}/100',`;
+    }
+    if (ef.includes('vinheta')) post += 'vignette=angle=PI/4.2,';
+    if (ef.includes('barras')) {
+      const bh = even(H * barHeight(W, H));
+      post += `drawbox=x=0:y=0:w=iw:h=${bh}:color=black:t=fill,drawbox=x=0:y=ih-${bh}:w=iw:h=${bh}:color=black:t=fill,`;
+    }
     const tail = `${post}tpad=stop_mode=clone:stop_duration=0.2,trim=duration=${f(D)},setpts=PTS-STARTPTS,setsar=1,format=yuv420p,settb=AVTB[v${i}]`;
     if (c.fit === 'cover') {
       filters.push(`${base},${cover},${tail}`);

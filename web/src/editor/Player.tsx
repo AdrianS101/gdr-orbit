@@ -7,7 +7,7 @@ import JASSUB from 'jassub';
 import { useEditor } from './store.ts';
 import { media } from '../lib/api.ts';
 import { buildAss } from '../../../shared/ass.ts';
-import { clipFx, colorSvg, crossAt, fadeAt, isNeutral, musicGainAt, speechIntervals, zoomAt } from '../../../shared/effects.ts';
+import { barHeight, clipFx, colorSvg, crossAt, fadeAt, shakeAt, isNeutral, musicGainAt, speechIntervals, zoomAt } from '../../../shared/effects.ts';
 import { clipAt, layoutClips, overlapOf, sourceTimeAt, timelineDuration, SAFE_AREAS_VERTICAL, type PlacedClip } from '../../../shared/timeline.ts';
 import { audioClipGain, layerDuration, overlayBase, setAt, stackedLayers, transformAt } from '../../../shared/keyframes.ts';
 import type { Asset, AudioClip, LayerClip, Timeline, VideoClip } from '../../../shared/types.ts';
@@ -218,17 +218,21 @@ export function Player({ showSafe }: { showSafe: boolean }) {
   useLayoutEffect(() => {
     const e = eng.current;
     const [act, other] = [videos()[e.active], videos()[1 - e.active]];
-    const paint = (v: HTMLVideoElement, c: VideoClip | null | undefined, z: number, tx: number, filter: string) => {
-      v.style.transform = `${tx ? `translateX(${tx}%) ` : ''}${z !== 1 ? `scale(${z})` : ''}`;
+    // Tremor de câmera: mesmo deslocamento (shakeAt) que o crop animado da exportação, com ampliação de 6%.
+    const shakeOf = (c: VideoClip | null | undefined, lt: number) => (c?.effects?.includes('tremor') ? shakeAt(lt) : null);
+    const paint = (v: HTMLVideoElement, c: VideoClip | null | undefined, z: number, tx: number, filter: string, ty = 0, sc = 1, lt = 0) => {
+      const sh = shakeOf(c, lt);
+      const zz = z * sc * (sh ? 1.06 : 1);
+      v.style.transform = `${tx || ty || sh ? `translate(${tx + (sh?.x ?? 0)}%, ${ty + (sh?.y ?? 0)}%) ` : ''}${zz !== 1 ? `scale(${zz})` : ''}`;
       v.style.transformOrigin = c ? `${c.focusX * 100}% ${c.focusY * 100}%` : '';
       v.style.filter = filter;
     };
-    paint(act, activeClip, zoom, crossing?.out.tx ?? 0, color ? 'url(#orbit-color)' : '');
+    paint(act, activeClip, zoom, crossing?.out.tx ?? 0, color ? 'url(#orbit-color)' : '', crossing?.out.ty ?? 0, crossing?.out.scale ?? 1, localT);
     act.style.opacity = '1';
     act.style.zIndex = '0';
     act.style.clipPath = 'none';
     if (crossing && e.incoming === inClip?.id) {
-      paint(other, inClip, inZoom, crossing.in.tx, inColor ? 'url(#orbit-color-in)' : '');
+      paint(other, inClip, inZoom, crossing.in.tx, inColor ? 'url(#orbit-color-in)' : '', crossing.in.ty ?? 0, crossing.in.scale ?? 1, time - (nextPlaced?.start ?? 0));
       other.style.opacity = String(crossing.in.opacity);
       other.style.clipPath = crossing.in.clip;
       other.style.zIndex = '1';
@@ -391,6 +395,13 @@ export function Player({ showSafe }: { showSafe: boolean }) {
           </filter>
         </svg>
         {fade && <div className="stage-layer" style={{ background: fade.color, opacity: fade.alpha, pointerEvents: 'none' }} />}
+        {activeClip?.effects?.includes('vinheta') && <div className="stage-layer" style={{ pointerEvents: 'none', background: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 48%, rgba(0,0,0,0.62) 100%)' }} />}
+        {activeClip?.effects?.includes('barras') && (
+          <>
+            <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: `${barHeight(W, H) * 100}%`, background: '#000', pointerEvents: 'none', zIndex: 2 }} />
+            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: `${barHeight(W, H) * 100}%`, background: '#000', pointerEvents: 'none', zIndex: 2 }} />
+          </>
+        )}
         {timeline.music && <audio ref={musicRef} src={media.original(timeline.music.assetId)} preload="auto" loop />}
         {stackedLayers(timeline).map((l) => (
           <LayerView
@@ -428,7 +439,7 @@ export function Player({ showSafe }: { showSafe: boolean }) {
             />
           );
         })}
-        <div ref={subRef} className="stage-layer" style={{ pointerEvents: 'none' }} />
+        <div ref={subRef} className="stage-layer" style={{ pointerEvents: 'none', zIndex: 4 }} />
         {showSafe && vertical && (
           <div className="safe-guides" aria-hidden>
             <div style={{ top: 0, left: 0, right: 0, height: `${SAFE_AREAS_VERTICAL.top * 100}%` }} />

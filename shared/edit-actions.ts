@@ -1,6 +1,6 @@
 // Vocabulário de edição: cada ação vira uma alteração revisável e desfazível na timeline.
 // Usado pelo chat com IA (a IA só escolhe ações desta lista) e pelas ações rápidas (sem IA).
-import type { Asset, CaptionWord, DenoiseLevel, FormatPreset, TextAnim, TextClip, TextStyleKind, Timeline, TransitionType } from './types.ts';
+import type { Asset, CaptionWord, DenoiseLevel, FormatPreset, VideoEffect, TextAnim, TextClip, TextStyleKind, Timeline, TransitionType } from './types.ts';
 import { clamp, defaultCaptionY, layoutClips, makeFormat, rippleDelete, splitAt, timelineDuration, uid } from './timeline.ts';
 import { buildCues } from './captions.ts';
 import { colorFromPreset, COLOR_PRESETS, removePauses } from './effects.ts';
@@ -11,7 +11,7 @@ export type EditAction =
   | { type: 'remove_pauses'; minGap?: number }
   | { type: 'cut'; start: number; end: number }
   | { type: 'keep_only'; start: number; end: number }
-  | { type: 'captions'; preset?: 'highlight' | 'pop' | 'karaoke' | 'classic' | 'box'; highlightColor?: string; uppercase?: boolean; position?: 'top' | 'middle' | 'bottom' }
+  | { type: 'captions'; preset?: 'highlight' | 'pop' | 'karaoke' | 'classic' | 'box' | 'bounce'; highlightColor?: string; uppercase?: boolean; position?: 'top' | 'middle' | 'bottom' }
   | { type: 'logo'; position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' }
   | { type: 'text'; text: string; start: number; duration?: number; kind?: TextStyleKind; anim?: TextAnim }
   | { type: 'transitions'; transition: TransitionType; duration?: number }
@@ -24,7 +24,8 @@ export type EditAction =
   | { type: 'denoise'; level?: DenoiseLevel }
   | { type: 'pip'; assetId: string; start: number; duration?: number; position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'center'; anim?: 'fade' | 'pop' | 'slide' | 'none' }
   | { type: 'broll'; assetId: string; start: number; duration?: number }
-  | { type: 'rhythm'; shotLength: number };
+  | { type: 'rhythm'; shotLength: number }
+  | { type: 'effect'; effect: VideoEffect; on?: boolean };
 
 export interface ActionContext {
   transcripts: Record<string, CaptionWord[]>;
@@ -56,6 +57,7 @@ export function describeAction(a: EditAction, ctx?: ActionContext): string {
     case 'format': return `Formato ${a.preset}`;
     case 'denoise': return `Reduzir ruído do áudio (${DENOISE_LABEL[a.level ?? 'light'].split(' (')[0].toLowerCase()})`;
     case 'pip': return `Sobrepor "${ctx?.assets[a.assetId]?.name ?? a.assetId}" em janela em ${t(a.start)}`;
+    case 'effect': return `${a.on === false ? 'Remover' : 'Aplicar'} efeito "${a.effect}" em todo o vídeo`;
     case 'rhythm': return `Ritmo: mudança de enquadramento a cada ~${t(a.shotLength)}`;
     case 'broll': return `B-roll "${ctx?.assets[a.assetId]?.name ?? a.assetId}" em ${t(a.start)}`;
   }
@@ -178,6 +180,10 @@ export function applyAction(tl: Timeline, a: EditAction, ctx: ActionContext): Ac
       const level = a.level === 'strong' ? 'strong' : 'light';
       return { timeline: { ...tl, clips: tl.clips.map((c) => ({ ...c, denoise: level })) }, label };
     }
+    case 'effect': {
+      if (!['barras', 'vinheta', 'tremor'].includes(a.effect)) throw new Error(`Efeito desconhecido: ${a.effect}.`);
+      return { timeline: { ...tl, clips: tl.clips.map((c) => ({ ...c, effects: a.on === false ? (c.effects ?? []).filter((x) => x !== a.effect) : Array.from(new Set([...(c.effects ?? []), a.effect])) })) }, label };
+    }
     case 'rhythm': {
       const r = applyRhythm(tl, ctx.transcripts, Number(a.shotLength) || 3);
       if (!r.changes) throw new Error('Os trechos já são curtos para esse ritmo (nada a dividir).');
@@ -236,10 +242,10 @@ export const ACTION_CATALOG = `Ações disponíveis (use somente estas; tempos e
 - remove_pauses {minGap?: número ≥0.3, padrão 0.6} — remove silêncios entre falas sem cortar palavras.
 - cut {start, end} — remove um intervalo.
 - keep_only {start, end} — mantém só o intervalo.
-- captions {preset?: "highlight"|"pop"|"karaoke"|"classic"|"box", highlightColor?: "#RRGGBB", uppercase?: bool, position?: "top"|"middle"|"bottom"} — gera/estiliza legendas sincronizadas.
+- captions {preset?: "highlight"|"pop"|"karaoke"|"classic"|"box"|"bounce" (bounce = animada: palavra cresce e alterna verde/amarelo), highlightColor?: "#RRGGBB", uppercase?: bool, position?: "top"|"middle"|"bottom"} — gera/estiliza legendas sincronizadas.
 - logo {position?: "top-right"|"top-left"|"bottom-right"|"bottom-left"} — aplica o logo da marca.
 - text {text, start, duration?, kind?: "title"|"lower"|"cta", anim?: "fade"|"pop"|"slide"} — título, lower third ou chamada.
-- transitions {transition: "fade"|"flash"|"zoom"|"dissolve"|"wipe"|"slide", duration?: 0.2-2} — transição em todos os cortes (dissolve/wipe/slide sobrepõem os trechos e encurtam o vídeo pela duração).
+- transitions {transition: "fade"|"flash"|"zoom"|"dissolve"|"wipe"|"wiperight"|"wipeup"|"wipedown"|"slide"|"slideright"|"slideup"|"slidedown"|"circle"|"zoomin", duration?: 0.2-2} — transição em todos os cortes (dissolve/wipe/slide sobrepõem os trechos e encurtam o vídeo pela duração).
 - filter {preset: ${Object.keys(COLOR_PRESETS).map((k) => `"${k}"`).join('|')}} — filtro de cor em todo o vídeo.
 - zoom {start, end, scale?: 1.05-1.5} — aproximação num trecho (ênfase).
 - dynamic_zoom {} — zoom suave alternado em todos os trechos (ritmo).
@@ -248,5 +254,6 @@ export const ACTION_CATALOG = `Ações disponíveis (use somente estas; tempos e
 - format {preset: "9:16"|"16:9"|"1:1"|"4:5"}.
 - denoise {level?: "light"|"strong"} — reduz chiado/ruído de fundo da fala (light para ruído leve).
 - pip {assetId, start, duration?, position?: "top-right"|"top-left"|"bottom-right"|"bottom-left"|"center", anim?: "fade"|"pop"|"slide"|"none"} — vídeo/imagem da biblioteca em janela sobre o vídeo, com entrada animada.
+- effect {effect: "barras"|"vinheta"|"tremor", on?: bool} — barras de cinema, vinheta escura nas bordas, tremor de câmera (energia/impacto).
 - rhythm {shotLength: 0.8-15} — divide nas pausas e alterna enquadramento (punch-in) a cada ~shotLength segundos, para um ritmo mais dinâmico.
 - broll {assetId, start, duration?} — vídeo/imagem cobrindo a tela enquanto a fala principal continua (ilustra o que é dito).`;

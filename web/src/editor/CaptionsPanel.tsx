@@ -13,6 +13,7 @@ const PRESETS: { id: CaptionPreset; label: string; hint: string }[] = [
   { id: 'highlight', label: 'Destaque', hint: 'Palavra falada na cor de destaque' },
   { id: 'pop', label: 'Pop', hint: 'Palavra falada cresce e muda de cor' },
   { id: 'karaoke', label: 'Karaokê', hint: 'Preenche conforme a fala' },
+  { id: 'bounce', label: 'Animada', hint: 'Palavra cresce e alterna duas cores' },
   { id: 'classic', label: 'Clássica', hint: 'Bloco estático com contorno' },
   { id: 'box', label: 'Caixa', hint: 'Texto sobre fundo sólido' },
 ];

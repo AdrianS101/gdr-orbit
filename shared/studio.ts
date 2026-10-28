@@ -66,6 +66,17 @@ export function hookRange(p: { from: number; to: number; hookSentence?: number }
 /** Estilo "podcast cinematográfico" (referência JotaJota): minúsculas, branca, sem contorno, palavra falada cresce, baixa no quadro. */
 export const PODCAST_CAPTION = { preset: 'pop' as const, uppercase: false, bold: true, size: 7, maxWordsPerCue: 3, maxCharsPerLine: 16, outline: 0, shadow: 3, posY: 0.8, textColor: '#FFFFFF', highlightColor: '#FFFFFF', font: 'Segoe UI Black' };
 
+/** Estilo "animada" (referência enviada): maiúsculas pesadas, palavra falada cresce ~130% e alterna verde/amarelo. */
+export const ANIMATED_CAPTION = { preset: 'bounce' as const, uppercase: true, bold: true, size: 6.6, maxWordsPerCue: 4, maxCharsPerLine: 16, outline: 3, shadow: 2, posY: 0.6, textColor: '#FFFFFF', highlightColor: '#2EE66B', highlightColor2: '#FFD400', outlineColor: '#000000', font: 'Arial Black' };
+
+/** Marca nas legendas as palavras-chave do corte (comparação sem acento e sem pontuação). */
+export function markKeywords<T extends { words: { text: string; k?: 1 }[] }>(cues: T[], keywords: string[]): T[] {
+  const norm = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const set = new Set(keywords.flatMap((k) => k.split(/\s+/)).map(norm).filter((w) => w.length >= 3));
+  if (!set.size) return cues;
+  return cues.map((c) => ({ ...c, words: c.words.map((w) => (set.has(norm(w.text)) ? { ...w, k: 1 as const } : w)) }));
+}
+
 export const VIRAL_CAPTION = { preset: 'highlight' as const, uppercase: true, bold: true, size: 9, maxWordsPerCue: 3, maxCharsPerLine: 14, outline: 12, shadow: 2, posY: 0.62 };
 
 /** Valida a escolha da IA: índices válidos, sem sobreposição, duração dentro do limite (tira frases do fim se passar). */

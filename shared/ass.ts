@@ -106,8 +106,13 @@ function cueEvents(cue: DisplayCue, st: CaptionStyle, x: number, y: number): str
           .map((k) => {
             const t = words[k].text;
             if (st.preset === 'karaoke' && k <= active) return `{\\c${hl}}${t}{\\c${base}}`;
-            if (k !== active) return t;
+            if (k !== active) return words[k].k ? `{\\c${hl}}${t}{\\c${base}}` : t;
             if (st.preset === 'highlight') return `{\\c${hl}}${t}{\\c${base}}`;
+            if (st.preset === 'bounce') {
+              // Palavra falada cresce (~130%) com leve repique e alterna entre as duas cores de destaque.
+              const c = k % 2 ? assColor(st.highlightColor2 ?? st.highlightColor) : hl;
+              return `{\\c${c}\\fscx100\\fscy100\\t(0,70,\\fscx138\\fscy138)\\t(70,150,\\fscx130\\fscy130)}${t}{\\c${base}\\fscx100\\fscy100}`;
+            }
             if (st.preset === 'pop') return `{\\c${hl}\\fscx100\\fscy100\\t(0,90,\\fscx122\\fscy122)\\t(90,170,\\fscx112\\fscy112)}${t}{\\c${base}\\fscx100\\fscy100}`;
             return t;
           })

@@ -75,7 +75,19 @@ export function BrandSwitcher() {
 
 const JOB_LABEL: Record<string, string> = { ingest: 'Preparação', transcribe: 'Transcrição', render: 'Exportação', publish: 'Publicação', drive: 'Drive', metrics: 'Métricas' };
 
-export function JobRow({ j, compact, onDismissed }: { j: Job; compact?: boolean; onDismissed?: () => void }) {
+/** Para onde leva o clique num processamento: o projeto (exportação) ou o vídeo na Biblioteca/cortes. */
+function jobLink(j: Job): string | null {
+  if (j.projectId) return `/editor/${j.projectId}`;
+  if (j.type === 'transcribe' && j.assetId) return `/cortes/${j.assetId}`;
+  if (j.assetId || j.type === 'ingest' || j.type === 'drive') return '/biblioteca';
+  if (j.type === 'publish') return '/conteudo';
+  if (j.type === 'metrics') return '/resultados';
+  return null;
+}
+
+export function JobRow({ j, compact, onDismissed, onOpen }: { j: Job; compact?: boolean; onDismissed?: () => void; onOpen?: () => void }) {
+  const navTo = useNavigate();
+  const link = jobLink(j);
   const removeJob = useApp((s) => s.removeJob);
   const act = async (a: 'cancel' | 'retry' | 'dismiss') => {
     try {
@@ -92,7 +104,11 @@ export function JobRow({ j, compact, onDismissed }: { j: Job; compact?: boolean;
     <div className="job">
       <div className="row">
         <span className={`badge ${j.status === 'failed' ? 'danger' : j.status === 'done' ? 'success' : j.status === 'running' ? 'accent' : ''}`}>{JOB_LABEL[j.type] ?? j.type}</span>
-        <span className="ellipsis small" style={{ flex: 1 }} title={j.title}>{j.title}</span>
+        {link ? (
+          <button className="job-title" title={`${j.title} — abrir`} onClick={() => { onOpen?.(); navTo(link); }}>{j.title}</button>
+        ) : (
+          <span className="job-title" title={j.title}>{j.title}</span>
+        )}
         {(j.status === 'queued' || j.status === 'running') && (
           <button className="btn ghost sm icon" title="Cancelar" onClick={() => act('cancel')}>
             <X size={14} />
@@ -141,9 +157,13 @@ function JobsIndicator() {
       </button>
       {open && (
         <div className="menu jobs-pop">
+          <div className="jobs-pop-head">
+            <b>Processamentos</b>
+            <span className="faint small">{active.length} em andamento · clique para abrir</span>
+          </div>
           {!list.length && <div className="hint">Nenhum processamento recente.</div>}
           {list.map((j) => (
-            <JobRow key={j.id} j={j} />
+            <JobRow key={j.id} j={j} onOpen={() => setOpen(false)} />
           ))}
         </div>
       )}

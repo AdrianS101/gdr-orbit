@@ -1,6 +1,6 @@
 // Efeitos com a MESMA matemática na prévia (CSS/SVG) e na exportação (FFmpeg):
 // filtros de cor, zoom animado, transições, ducking da música e remoção de pausas.
-import type { CaptionWord, ColorAdjust, Timeline, TransitionType, VideoClip } from './types.ts';
+import type { CaptionWord, ColorAdjust, Timeline, TransitionType, VideoClip, VideoEffect } from './types.ts';
 import { clipDuration, layoutClips, OVERLAP_TRANSITIONS, rippleDelete } from './timeline.ts';
 import { mapCuesToTimeline } from './captions.ts';
 
@@ -14,6 +14,19 @@ export const COLOR_PRESETS: Record<string, { label: string; v: Omit<ColorAdjust,
   frio: { label: 'Frio', v: { brightness: 1, contrast: 1.04, saturation: 0.95, temperature: -0.5 } },
   suave: { label: 'Suave', v: { brightness: 1.05, contrast: 0.9, saturation: 0.9, temperature: 0.1 } },
   podcast: { label: 'Podcast cinematográfico', v: { brightness: 0.94, contrast: 1.14, saturation: 0.55, temperature: 0.14 } },
+  natural: { label: 'Natural', v: { brightness: 1.02, contrast: 1.04, saturation: 1.05, temperature: 0 } },
+  brilhante: { label: 'Brilhante', v: { brightness: 1.1, contrast: 1.02, saturation: 1.1, temperature: 0.05 } },
+  retro: { label: 'Retrô', v: { brightness: 1.0, contrast: 0.92, saturation: 0.75, temperature: 0.35 } },
+  vintage: { label: 'Vintage', v: { brightness: 1.03, contrast: 0.88, saturation: 0.6, temperature: 0.45 } },
+  filme: { label: 'Filme antigo', v: { brightness: 0.98, contrast: 1.05, saturation: 0.5, temperature: 0.25 } },
+  noir: { label: 'Noir', v: { brightness: 0.95, contrast: 1.35, saturation: 0, temperature: 0 } },
+  dramatico: { label: 'Dramático', v: { brightness: 0.92, contrast: 1.3, saturation: 0.9, temperature: -0.05 } },
+  moody: { label: 'Moody', v: { brightness: 0.9, contrast: 1.18, saturation: 0.7, temperature: -0.2 } },
+  azulado: { label: 'Azul frio', v: { brightness: 1.0, contrast: 1.08, saturation: 0.9, temperature: -0.8 } },
+  porDoSol: { label: 'Pôr do sol', v: { brightness: 1.04, contrast: 1.06, saturation: 1.2, temperature: 0.8 } },
+  pastel: { label: 'Pastel', v: { brightness: 1.08, contrast: 0.85, saturation: 0.75, temperature: 0.1 } },
+  vibrante: { label: 'Vibrante', v: { brightness: 1.03, contrast: 1.15, saturation: 1.55, temperature: 0 } },
+  limpo: { label: 'Limpo', v: { brightness: 1.06, contrast: 1.08, saturation: 0.95, temperature: -0.1 } },
   pb: { label: 'Preto e branco', v: { brightness: 1, contrast: 1.15, saturation: 0, temperature: 0 } },
 };
 
@@ -60,17 +73,37 @@ export function colorSvg(c: ColorAdjust): { slope: number; intercept: number; ma
 
 // ---------- Zoom e transições ----------
 
-export const TRANSITIONS: Record<TransitionType, string> = { fade: 'Escurecer', flash: 'Flash branco', zoom: 'Zoom', dissolve: 'Dissolver (cruzada)', wipe: 'Cortina (cruzada)', slide: 'Deslizar (cruzada)' };
+export const TRANSITIONS: Record<TransitionType, string> = { fade: 'Escurecer', flash: 'Flash branco', zoom: 'Zoom', dissolve: 'Dissolver (cruzada)', wipe: 'Cortina ← (cruzada)', wiperight: 'Cortina → (cruzada)', wipeup: 'Cortina ↑ (cruzada)', wipedown: 'Cortina ↓ (cruzada)', slide: 'Deslizar ← (cruzada)', slideright: 'Deslizar → (cruzada)', slideup: 'Deslizar ↑ (cruzada)', slidedown: 'Deslizar ↓ (cruzada)', circle: 'Círculo (cruzada)', zoomin: 'Mergulho (cruzada)' };
 /** Nome no filtro xfade do FFmpeg. */
-export const XFADE: Record<string, string> = { dissolve: 'fade', wipe: 'wipeleft', slide: 'slideleft' };
+export const XFADE: Record<string, string> = { dissolve: 'fade', wipe: 'wipeleft', wiperight: 'wiperight', wipeup: 'wipeup', wipedown: 'wipedown', slide: 'slideleft', slideright: 'slideright', slideup: 'slideup', slidedown: 'slidedown', circle: 'circleopen', zoomin: 'zoomin' };
 
 /** Transição cruzada no instante t: u (0..1) e como desenhar o trecho que sai e o que entra (prévia ⇔ xfade). */
-export function crossAt(type: TransitionType, u: number): { out: { opacity: number; clip: string; tx: number }; in: { opacity: number; clip: string; tx: number } } {
+type Side = { opacity: number; clip: string; tx: number; ty?: number; scale?: number };
+export function crossAt(type: TransitionType, u: number): { out: Side; in: Side } {
   const k = Math.min(1, Math.max(0, u));
-  if (type === 'wipe') return { out: { opacity: 1, clip: 'none', tx: 0 }, in: { opacity: 1, clip: `inset(0 0 0 ${((1 - k) * 100).toFixed(3)}%)`, tx: 0 } };
-  if (type === 'slide') return { out: { opacity: 1, clip: 'none', tx: -k * 100 }, in: { opacity: 1, clip: 'none', tx: (1 - k) * 100 } };
-  return { out: { opacity: 1, clip: 'none', tx: 0 }, in: { opacity: k, clip: 'none', tx: 0 } };
+  const p = ((1 - k) * 100).toFixed(3);
+  const still: Side = { opacity: 1, clip: 'none', tx: 0 };
+  // Mesmas direções do xfade do FFmpeg (o trecho novo surge do lado indicado).
+  if (type === 'wipe') return { out: still, in: { opacity: 1, clip: `inset(0 0 0 ${p}%)`, tx: 0 } };
+  if (type === 'wiperight') return { out: still, in: { opacity: 1, clip: `inset(0 ${p}% 0 0)`, tx: 0 } };
+  if (type === 'wipeup') return { out: still, in: { opacity: 1, clip: `inset(${p}% 0 0 0)`, tx: 0 } };
+  if (type === 'wipedown') return { out: still, in: { opacity: 1, clip: `inset(0 0 ${p}% 0)`, tx: 0 } };
+  if (type === 'slide') return { out: { ...still, tx: -k * 100 }, in: { ...still, tx: (1 - k) * 100 } };
+  if (type === 'slideright') return { out: { ...still, tx: k * 100 }, in: { ...still, tx: -(1 - k) * 100 } };
+  if (type === 'slideup') return { out: { ...still, ty: -k * 100 }, in: { ...still, tx: 0, ty: (1 - k) * 100 } };
+  if (type === 'slidedown') return { out: { ...still, ty: k * 100 }, in: { ...still, tx: 0, ty: -(1 - k) * 100 } };
+  if (type === 'circle') return { out: still, in: { opacity: 1, clip: `circle(${(k * 72).toFixed(3)}% at 50% 50%)`, tx: 0 } };
+  if (type === 'zoomin') return { out: { ...still, scale: 1 + k * 0.6, opacity: 1 }, in: { opacity: k, clip: 'none', tx: 0 } };
+  return { out: still, in: { opacity: k, clip: 'none', tx: 0 } };
 }
+
+// ---------- Efeitos de vídeo (catálogo próprio, inspirado nos editores populares) ----------
+
+export const VIDEO_EFFECTS: Record<VideoEffect, string> = { barras: 'Barras de cinema', vinheta: 'Vinheta', tremor: 'Tremor de câmera' };
+/** Barras de cinema: faixa de cada lado = 10% da altura no vertical, 12% no horizontal. */
+export const barHeight = (w: number, h: number) => (h > w ? 0.1 : 0.12);
+/** Tremor: deslocamento em % do quadro no instante t (mesma fórmula na prévia e no FFmpeg). */
+export const shakeAt = (t: number) => ({ x: 1.2 * Math.sin(t * 23) + 0.6 * Math.sin(t * 37), y: 1.0 * Math.sin(t * 29 + 1) + 0.5 * Math.sin(t * 41) });
 const ZOOM_PUNCH = 0.3;
 
 export interface ClipFx {

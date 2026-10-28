@@ -225,8 +225,8 @@ export function LibraryPage() {
                     </button>
                   )}
                   {a.kind === 'video' && a.status === 'ready' && a.meta.hasAudio && (
-                    <button className="btn ghost sm" title="Gerar vários Reels a partir deste vídeo (entrevista, podcast, live)" onClick={() => setReels(a)}>
-                      <Scissors size={14} /> Reels
+                    <button className="btn ghost sm" title="Gerar vários Reels a partir deste vídeo (entrevista, podcast, live)" onClick={() => nav(`/cortes/${a.id}`)}>
+                      <Scissors size={14} /> Cortes com IA
                     </button>
                   )}
                   <button className="btn ghost sm icon" title="Excluir" onClick={() => remove(a)}>

@@ -41,6 +41,7 @@ export interface TimedWord {
   start: number;
   end: number;
   index: number;
+  k?: 1;
 }
 
 export interface DisplayCue {
@@ -74,7 +75,7 @@ export function mapCuesToTimeline(tl: Timeline): DisplayCue[] {
         const tm = p.start + (mid - p.clip.in) / p.clip.speed;
         if (tm < win[p.index].lo || tm >= win[p.index].hi) continue;
         const g = groups.get(p.index) ?? [];
-        g.push({ text: w.text, start: p.start + (s - p.clip.in) / p.clip.speed, end: p.start + (e - p.clip.in) / p.clip.speed, index });
+        g.push({ ...(w.k ? { k: 1 as const } : {}), text: w.text, start: p.start + (s - p.clip.in) / p.clip.speed, end: p.start + (e - p.clip.in) / p.clip.speed, index });
         groups.set(p.index, g);
       }
     });

@@ -152,6 +152,7 @@ const migrations: string[] = [
   );
   `,
   `ALTER TABLE contacts ADD COLUMN profile_checked_at TEXT;`,
+  `ALTER TABLE projects ADD COLUMN clip_meta TEXT;`,
 ];
 
 db.exec('CREATE TABLE IF NOT EXISTS _migrations (n INTEGER PRIMARY KEY)');

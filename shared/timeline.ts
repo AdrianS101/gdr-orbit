@@ -83,7 +83,7 @@ export interface PlacedClip {
   end: number;
 }
 
-export const OVERLAP_TRANSITIONS = new Set(['dissolve', 'wipe', 'slide']);
+export const OVERLAP_TRANSITIONS = new Set(['dissolve', 'wipe', 'slide', 'wiperight', 'wipeup', 'wipedown', 'slideright', 'slideup', 'slidedown', 'circle', 'zoomin']);
 
 /** Sobreposição com o trecho anterior (transições cruzadas), limitada a metade de cada trecho. */
 export function overlapOf(clips: VideoClip[], i: number): number {

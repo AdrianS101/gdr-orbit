@@ -6,10 +6,10 @@ import { RhythmSection } from './RhythmPanel.tsx';
 import { useApp } from '../lib/store.ts';
 import { Field } from '../components/ui.tsx';
 import { UploadButton } from '../pages/Library.tsx';
-import { COLOR_PRESETS, colorFromPreset, TRANSITIONS } from '../../../shared/effects.ts';
+import { COLOR_PRESETS, colorFromPreset, TRANSITIONS, VIDEO_EFFECTS } from '../../../shared/effects.ts';
 import { textDefaults } from '../../../shared/edit-actions.ts';
 import { fmtTime, timelineDuration, uid } from '../../../shared/timeline.ts';
-import type { ColorAdjust, MusicTrack, TextClip, TextStyleKind, TransitionType, VideoClip } from '../../../shared/types.ts';
+import type { ColorAdjust, MusicTrack, TextClip, TextStyleKind, TransitionType, VideoClip, VideoEffect } from '../../../shared/types.ts';
 import { Plus, Trash2, Music } from 'lucide-react';
 
 export function EffectsPanel() {
@@ -76,6 +76,18 @@ export function EffectsPanel() {
           <input type="range" min={0.2} max={2} step={0.1} value={clip.transition.duration} onChange={(e) => setClips((c) => (c.id === clip.id ? { ...c, transition: { ...c.transition!, duration: Number(e.target.value) } } : c), 'Tempo do elemento')} />
         </Field>
       )}
+      <Field label="Efeitos de vídeo" help={clip ? 'Liga/desliga neste trecho.' : 'Liga/desliga em todos os trechos.'}>
+        <div className="row wrap" style={{ gap: 4 }}>
+          {(Object.keys(VIDEO_EFFECTS) as VideoEffect[]).map((ef) => {
+            const on = clip ? !!clip.effects?.includes(ef) : timeline.clips.length > 0 && timeline.clips.every((c) => c.effects?.includes(ef));
+            return (
+              <button key={ef} className={`btn sm ${on ? 'primary' : ''}`} onClick={() => setClips((c) => (target(c) ? { ...c, effects: on ? (c.effects ?? []).filter((x) => x !== ef) : Array.from(new Set([...(c.effects ?? []), ef])) } : c), 'Efeito')}>
+                {VIDEO_EFFECTS[ef]}
+              </button>
+            );
+          })}
+        </div>
+      </Field>
       <RhythmSection />
     </div>
   );

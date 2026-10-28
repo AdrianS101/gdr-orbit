@@ -35,6 +35,7 @@ export interface VideoClip {
   transition?: { type: TransitionType; duration: number };
   /** Redução de ruído do áudio (aplicada na exportação; amostra tratada disponível no painel). */
   denoise?: DenoiseLevel;
+  effects?: VideoEffect[];
 }
 
 export type DenoiseLevel = 'light' | 'strong';
@@ -91,7 +92,10 @@ export interface AudioClip {
 }
 
 /** fade/flash/zoom: sem sobreposição (metade em cada trecho). dissolve/wipe/slide: o trecho seguinte começa antes, sobreposto ao anterior. */
-export type TransitionType = 'fade' | 'flash' | 'zoom' | 'dissolve' | 'wipe' | 'slide';
+export type TransitionType = 'fade' | 'flash' | 'zoom' | 'dissolve' | 'wipe' | 'slide' | 'wiperight' | 'wipeup' | 'wipedown' | 'slideright' | 'slideup' | 'slidedown' | 'circle' | 'zoomin';
+
+/** Efeitos de vídeo por trecho (mesma conta na prévia e na exportação). */
+export type VideoEffect = 'barras' | 'vinheta' | 'tremor';
 
 export interface ColorAdjust {
   preset: string;
@@ -155,6 +159,8 @@ export interface CaptionWord {
   text: string;
   s: number;
   e: number;
+  /** Palavra-chave: fica sempre na cor de destaque ("destacar palavras-chave"). */
+  k?: 1;
 }
 
 export interface CaptionCue {
@@ -165,7 +171,7 @@ export interface CaptionCue {
   breaks?: number[];
 }
 
-export type CaptionPreset = 'classic' | 'highlight' | 'pop' | 'karaoke' | 'box';
+export type CaptionPreset = 'classic' | 'highlight' | 'pop' | 'karaoke' | 'box' | 'bounce';
 
 export interface CaptionStyle {
   preset: CaptionPreset;
@@ -176,6 +182,8 @@ export interface CaptionStyle {
   uppercase: boolean;
   textColor: string;
   highlightColor: string;
+  /** Segunda cor de destaque (estilo "animada": alterna palavra a palavra). */
+  highlightColor2?: string;
   outlineColor: string;
   /** Espessura do contorno em % do tamanho da fonte. */
   outline: number;
