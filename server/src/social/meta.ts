@@ -108,12 +108,21 @@ async function hostImage(pageId: string, token: string, file: string): Promise<s
   return url;
 }
 
-async function resumableVideo(igId: string, token: string, file: string, params: Record<string, string>) {
-  const c = await call(`${G()}/${igId}/media`, { method: 'POST', body: new URLSearchParams({ ...params, upload_type: 'resumable', access_token: token }) });
-  const size = fs.statSync(file).size;
-  const up = await fetch(c.uri, { method: 'POST', headers: { Authorization: `OAuth ${token}`, offset: '0', file_size: String(size) }, body: fs.readFileSync(file) });
-  if (!up.ok) throw new MetaError(`Falha ao enviar o vídeo para o Instagram (${up.status}).`, 'Tente novamente.');
-  return c.id as string;
+// O servidor de upload do Instagram recusa de forma intermitente ("ProcessingFailedError", 400) o mesmo arquivo
+// que passa na tentativa seguinte; o container recusado fica preso em IN_PROGRESS. Por isso cada tentativa cria um container novo.
+async function resumableVideo(igId: string, token: string, file: string, params: Record<string, string>, onRetry?: (msg: string) => void) {
+  const body = fs.readFileSync(file);
+  let last = '';
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    const c = await call(`${G()}/${igId}/media`, { method: 'POST', body: new URLSearchParams({ ...params, upload_type: 'resumable', access_token: token }) });
+    const up = await fetch(c.uri, { method: 'POST', headers: { Authorization: `OAuth ${token}`, offset: '0', file_size: String(body.length) }, body }).catch(() => null);
+    if (up?.ok) return c.id as string;
+    const j: any = up ? await up.json().catch(() => ({})) : {};
+    last = `${up?.status ?? 'sem conexão'}${j.debug_info?.message ? `: ${j.debug_info.message}` : ''}`;
+    onRetry?.(`Instagram recusou o envio (${last}); tentando de novo (${attempt}/6)`);
+    await new Promise((r) => setTimeout(r, 4000 * attempt));
+  }
+  throw new MetaError(`O Instagram recusou o envio do vídeo 6 vezes seguidas (${last}).`, 'É uma instabilidade do servidor da Meta. Tente novamente em alguns minutos.');
 }
 
 async function waitContainer(id: string, token: string, onTick?: (msg: string) => void) {
@@ -137,7 +146,7 @@ export async function publishInstagram(a: { igId: string; pageId: string; token:
         onStep('Preparando a capa');
         coverParams.cover_url = await hostImage(a.pageId, a.token, cover.imageFile);
       } else if (cover?.offsetMs !== undefined) coverParams.thumb_offset = String(cover.offsetMs);
-      container = await resumableVideo(a.igId, a.token, files[0].file, { media_type: 'REELS', caption, share_to_feed: 'true', ...coverParams });
+      container = await resumableVideo(a.igId, a.token, files[0].file, { media_type: 'REELS', caption, share_to_feed: 'true', ...coverParams }, (m) => onStep(m));
     } else if (type === 'image') {
       onStep('Enviando imagem');
       const url = await hostImage(a.pageId, a.token, files[0].file);
@@ -147,7 +156,7 @@ export async function publishInstagram(a: { igId: string; pageId: string; token:
       for (const [i, f] of files.entries()) {
         onStep(`Enviando item ${i + 1} de ${files.length} do carrossel`);
         if (f.kind === 'video') {
-          const id = await resumableVideo(a.igId, a.token, f.file, { media_type: 'VIDEO', is_carousel_item: 'true' });
+          const id = await resumableVideo(a.igId, a.token, f.file, { media_type: 'VIDEO', is_carousel_item: 'true' }, (m) => onStep(m));
           await waitContainer(id, a.token);
           children.push(id);
         } else {
