@@ -18,6 +18,8 @@ env.cacheDir = input.modelsDir;
 const send = (m: unknown) => process.stdout.write(JSON.stringify(m) + '\n');
 
 const W = 448;
+// Entrada do modelo: 320 px no lado menor (o padrão de 512 é ~3,5× mais lento e acha as mesmas pessoas).
+const MODEL_EDGE = 320;
 const H = Math.max(2, Math.round((W * input.height) / input.width / 2) * 2);
 
 function frame(file: string, t: number): Promise<Buffer> {
@@ -32,6 +34,7 @@ function frame(file: string, t: number): Promise<Buffer> {
 
 try {
   const detect = await pipeline('object-detection', 'Xenova/yolos-tiny', { dtype: 'q8' } as any);
+  (detect as any).processor.image_processor.size = { shortest_edge: MODEL_EDGE, longest_edge: Math.round(MODEL_EDGE * 1.78) };
   type Box = { cx: number; cy: number; w: number; h: number; score: number };
   const items: { key: string; boxes: Box[] }[] = [];
   for (const f of input.frames) {
@@ -47,6 +50,7 @@ try {
       const boxes = res.filter((r) => r.label === 'person').map((p) => ({ cx: (p.box.xmin + p.box.xmax) / 2 / W, cy: (p.box.ymin + p.box.ymax) / 2 / H, w: (p.box.xmax - p.box.xmin) / W, h: (p.box.ymax - p.box.ymin) / H, score: p.score }));
       // Pessoas pequenas demais (fundo, plateia, reflexos) não contam.
       items.push({ key: f.key, boxes: boxes.filter((b) => b.w * b.h > 0.02) });
+      if (items.length % 5 === 0) send({ type: 'progress', done: items.length, total: input.frames.length });
     } catch {
       items.push({ key: f.key, boxes: [] });
     }

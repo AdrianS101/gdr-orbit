@@ -11,17 +11,20 @@ export interface PersonBox { cx: number; cy: number; w: number; h: number; score
 /** Quem focar: a maior pessoa (mais perto da câmera), a da esquerda, a da direita, o centro (sem detecção) ou a mais próxima de um ponto escolhido. */
 export type ReframeTarget = { mode: 'largest' | 'left' | 'right' | 'center' } | { mode: 'pick'; x: number };
 
-export function detectPeople(file: string, width: number, height: number, frames: { key: string; t: number }[]): Promise<Map<string, PersonBox[]>> {
+export function detectPeople(file: string, width: number, height: number, frames: { key: string; t: number }[], onProgress?: (done: number, total: number) => void): Promise<Map<string, PersonBox[]>> {
   return new Promise((resolve) => {
     const worker = path.join(config.root, 'server', 'src', 'workers', 'detect-worker.ts');
     const arg = JSON.stringify({ frames: frames.map((f) => ({ ...f, file })), width, height, modelsDir: config.modelsDir, ffmpeg: config.ffmpeg });
     const p = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', worker, arg], { windowsHide: true, cwd: config.root });
     let out = '';
-    p.stdout.on('data', (d) => (out += d.toString()));
+    p.stdout.on('data', (d) => {
+      out += d.toString();
+      for (const m of d.toString().matchAll(/\{"type":"progress","done":(\d+),"total":(\d+)\}/g)) onProgress?.(Number(m[1]), Number(m[2]));
+    });
     p.stderr.on('data', () => {});
     p.on('error', () => resolve(new Map()));
     p.on('close', () => {
-      const line = out.split('\n').map((l) => l.trim()).filter(Boolean).pop();
+      const line = out.split('\n').map((l) => l.trim()).filter((l) => l && !l.includes('"progress"')).pop();
       try {
         const m = JSON.parse(line ?? '{}');
         resolve(new Map(m.type === 'result' ? (m.items as { key: string; boxes: PersonBox[] }[]).map((i) => [i.key, i.boxes]) : []));
@@ -33,13 +36,19 @@ export function detectPeople(file: string, width: number, height: number, frames
 }
 
 /** Escolhe, entre as pessoas do quadro, a que corresponde à escolha do usuário. */
-export function choosePerson(boxes: PersonBox[], target: ReframeTarget): PersonBox | null {
+export function choosePerson(boxes: PersonBox[], target: ReframeTarget, prev?: PersonBox | null): PersonBox | null {
   if (!boxes.length || target.mode === 'center') return null;
   const by = (k: (b: PersonBox) => number) => [...boxes].sort((a, b) => k(a) - k(b))[0];
   if (target.mode === 'left') return by((b) => b.cx);
   if (target.mode === 'right') return by((b) => -b.cx);
   if (target.mode === 'pick') return by((b) => Math.abs(b.cx - target.x));
-  return by((b) => -(b.w * b.h * b.score));
+  // Pessoa principal: entre as de tamanho parecido com a maior, mantém quem já estava em foco (plano aberto com
+  // duas pessoas não fica alternando); num plano de uma pessoa só, segue a troca de câmera normalmente.
+  const size = (b: PersonBox) => b.w * b.h * b.score;
+  const max = Math.max(...boxes.map(size));
+  const big = boxes.filter((b) => size(b) >= max * 0.6);
+  if (prev && big.length > 1) return [...big].sort((a, b) => Math.abs(a.cx - prev.cx) - Math.abs(b.cx - prev.cx))[0];
+  return by((b) => -size(b));
 }
 
 const clamp = (v: number, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -66,29 +75,32 @@ export function focusFor(box: PersonBox, srcAspect: number, outAspect: number) {
 }
 
 /** Aplica o enquadramento automático em vários projetos de uma vez (um único carregamento do detector). */
-export async function autoReframe(file: string, src: { width: number; height: number }, timelines: Timeline[], target: ReframeTarget = { mode: 'largest' }): Promise<{ timelines: Timeline[]; found: number; total: number }> {
+export async function autoReframe(file: string, src: { width: number; height: number }, timelines: Timeline[], target: ReframeTarget = { mode: 'largest' }, onProgress?: (done: number, total: number) => void): Promise<{ timelines: Timeline[]; found: number; total: number }> {
   const srcAspect = src.width / src.height;
   const needs = (tl: Timeline) => Math.abs(srcAspect - tl.format.width / tl.format.height) / (tl.format.width / tl.format.height) >= 0.05;
   if (target.mode === 'center') {
     return { timelines: timelines.map((tl) => ({ ...tl, clips: tl.clips.map((c) => ({ ...c, focusX: 0.5, focusY: 0.5, zoomX: undefined, zoomY: undefined })) })), found: 0, total: 0 };
   }
-  // Dois quadros por trecho (1/3 e 2/3): uma pessoa que pisca, vira ou sai de um quadro ainda aparece no outro.
-  const frames: { key: string; t: number }[] = [];
-  timelines.forEach((tl, i) => {
-    if (!needs(tl)) return;
-    tl.clips.forEach((c, j) => {
-      const d = c.out - c.in;
-      frames.push({ key: `${i}:${j}:a`, t: c.in + d / 3 }, { key: `${i}:${j}:b`, t: c.in + (2 * d) / 3 });
-    });
-  });
-  if (!frames.length) return { timelines, found: 0, total: 0 };
-  const boxes = await detectPeople(file, src.width, src.height, frames);
+  // Quadros a cada 3 s do vídeo original, compartilhados entre os trechos (remover pausas gera dezenas de
+  // trechos por corte; analisar cada um seria lento demais). Cada trecho usa os quadros do seu intervalo.
+  const STEP = 3;
+  const times = new Set<number>();
+  const sampleOf = (c: { in: number; out: number }) => {
+    const ts: number[] = [];
+    for (let t = Math.ceil(c.in / STEP) * STEP; t < c.out; t += STEP) ts.push(t);
+    return ts.length ? ts : [Math.round(((c.in + c.out) / 2) * 2) / 2];
+  };
+  timelines.forEach((tl) => needs(tl) && tl.clips.forEach((c) => sampleOf(c).forEach((t) => times.add(t))));
+  if (!times.size) return { timelines, found: 0, total: 0 };
+  const frames = [...times].sort((a, b) => a - b).map((t) => ({ key: String(t), t }));
+  const boxes = await detectPeople(file, src.width, src.height, frames, onProgress);
   let found = 0, total = 0;
   const out = timelines.map((tl, i) => {
     if (!needs(tl)) return tl;
     const outAspect = tl.format.width / tl.format.height;
+    let prev: PersonBox | null = null;
     const per = tl.clips.map((_, j) => {
-      const picks = ['a', 'b'].map((s) => choosePerson(boxes.get(`${i}:${j}:${s}`) ?? [], target)).filter((b): b is PersonBox => !!b);
+      const picks = sampleOf(tl.clips[j]).map((t) => (prev = choosePerson(boxes.get(String(t)) ?? [], target, prev) ?? prev)).filter((b): b is PersonBox => !!b);
       if (!picks.length) return null;
       const avg = (k: keyof PersonBox) => picks.reduce((n, b) => n + b[k], 0) / picks.length;
       return { cx: avg('cx'), cy: avg('cy'), w: avg('w'), h: avg('h'), score: avg('score') };

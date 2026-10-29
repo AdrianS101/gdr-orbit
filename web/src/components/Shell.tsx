@@ -73,12 +73,12 @@ export function BrandSwitcher() {
   );
 }
 
-const JOB_LABEL: Record<string, string> = { ingest: 'Preparação', transcribe: 'Transcrição', render: 'Exportação', publish: 'Publicação', drive: 'Drive', metrics: 'Métricas' };
+const JOB_LABEL: Record<string, string> = { ingest: 'Preparação', transcribe: 'Transcrição', render: 'Exportação', publish: 'Publicação', drive: 'Drive', metrics: 'Métricas', clips: 'Cortes com IA' };
 
 /** Para onde leva o clique num processamento: o projeto (exportação) ou o vídeo na Biblioteca/cortes. */
 function jobLink(j: Job): string | null {
   if (j.projectId) return `/editor/${j.projectId}`;
-  if (j.type === 'transcribe' && j.assetId) return `/cortes/${j.assetId}`;
+  if ((j.type === 'transcribe' || j.type === 'clips') && j.assetId) return `/cortes/${j.assetId}`;
   if (j.assetId || j.type === 'ingest' || j.type === 'drive') return '/biblioteca';
   if (j.type === 'publish') return '/conteudo';
   if (j.type === 'metrics') return '/resultados';

@@ -33,7 +33,6 @@ export function ClipsPage() {
   const [clips, setClips] = useState<Clip[] | null>(null);
   const [sel, setSel] = useState<string[]>([]);
   const [sort, setSort] = useState<'score' | 'time'>('score');
-  const [busy, setBusy] = useState('');
   const [note, setNote] = useState('');
   const [showPrefs, setShowPrefs] = useState(false);
   const [transcribeJob, setTranscribeJob] = useState<string | null>(null);
@@ -65,21 +64,32 @@ export function ClipsPage() {
       if (r) setTranscribeJob(r.jobId);
       return;
     }
-    setBusy('Lendo a conversa inteira e escolhendo os melhores trechos…');
-    try {
-      const sug = await api.post<{ segments: any[]; note: string }>(`/api/assets/${asset.id}/reels/suggest`, { count: p.countMode === 'auto' ? 'auto' : p.count, length: p.length, topics: p.topics, moments: p.moments, viral: true });
-      setNote(sug.note || '');
-      if (!sug.segments.length) return;
-      setBusy(`Montando ${sug.segments.length} corte(s): enquadramento, legenda, luz, ritmo…`);
-      await api.post(`/api/assets/${asset.id}/reels/create`, { segments: sug.segments, viral: true, style: p.style, format: p.format, highlightKeywords: p.captions && p.highlightKeywords, autoLight: p.autoLight, autoReframe: p.focus.mode !== 'center', reframe: p.focus, removePauses: p.removePauses, logo: p.logo, autoExport: p.autoExport, hookTitle: p.style === 'impacto', captions: p.captions, hook: p.hook, denoise: p.denoise, motion: p.motion, filter: p.filter });
-      setShowPrefs(false);
-      load();
-    } catch (e) {
-      showError(e);
-    } finally {
-      setBusy('');
-    }
+    // Roda em segundo plano (Processamentos): pode levar minutos e não depende desta página ficar aberta.
+    setNote('');
+    await api.post(`/api/assets/${asset.id}/clips/generate`, {
+      suggest: { count: p.countMode === 'auto' ? 'auto' : p.count, length: p.length, topics: p.topics, moments: p.moments, viral: true },
+      create: { viral: true, style: p.style, format: p.format, highlightKeywords: p.captions && p.highlightKeywords, autoLight: p.autoLight, autoReframe: p.focus.mode !== 'center', reframe: p.focus, removePauses: p.removePauses, logo: p.logo, autoExport: p.autoExport, hookTitle: p.style === 'impacto', captions: p.captions, hook: p.hook, denoise: p.denoise, motion: p.motion, filter: p.filter },
+    }).catch(showError);
   };
+  // Processamento de cortes deste vídeo (o mais recente).
+  const cjob = useMemo(() => Object.values(jobs).filter((j) => j.type === 'clips' && j.assetId === assetId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null, [jobs, assetId]);
+  const cRunning = !!cjob && (cjob.status === 'queued' || cjob.status === 'running');
+  useEffect(() => {
+    if (cRunning) setShowPrefs(true);
+  }, [cRunning]);
+  // Acompanha o processamento que estava rodando com esta tela aberta; ao terminar, mostra o resultado.
+  const [watch, setWatch] = useState<string | null>(null);
+  useEffect(() => {
+    if (!cjob) return;
+    if (cRunning) return void setWatch(cjob.id);
+    if (watch !== cjob.id) return;
+    setWatch(null);
+    if (cjob.status === 'done') {
+      setNote(cjob.result?.note || '');
+      if (cjob.result?.created) setShowPrefs(false);
+      load();
+    } else if (cjob.status === 'failed') useApp.getState().toast({ kind: 'error', title: 'Não foi possível gerar os cortes', hint: cjob.error ?? undefined });
+  }, [cjob?.id, cjob?.status]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (transcribeJob && jobs[transcribeJob]?.status === 'done') {
       setTranscribeJob(null);
@@ -198,9 +208,13 @@ export function ClipsPage() {
           {tjob ? (
             <div className="col" style={{ gap: 4 }}><Progress value={tjob.progress} indeterminate={tjob.status === 'queued'} /><span className="faint small">Transcrevendo ({tjob.message}) — depois os cortes são gerados sozinhos. Pode deixar esta tela aberta.</span></div>
           ) : (
-            <button className="btn primary lg" disabled={!!busy} onClick={generate}>{busy ? <Spinner /> : <Zap size={18} />} {busy ? <>{busy} <Elapsed /></> : transcribed ? 'Gerar cortes com IA' : 'Transcrever e gerar cortes'}</button>
+            cRunning ? (
+            <div className="col" style={{ gap: 4 }}><Progress value={cjob!.progress} indeterminate={cjob!.status === 'queued'} /><span className="faint small">{cjob!.message || 'Na fila'} <Elapsed /> — roda em segundo plano (Processamentos); pode sair desta tela.</span></div>
+          ) : (
+            <button className="btn primary lg" onClick={generate}><Zap size={18} /> {transcribed ? 'Gerar cortes com IA' : 'Transcrever e gerar cortes'}</button>
+          )
           )}
-          {busy && (asset.meta.duration ?? 0) > 1200 && <span className="faint small">Conversa longa: a IA lê em partes ao mesmo tempo. Pode levar de 1 a 4 minutos.</span>}
+          {cRunning && (asset.meta.duration ?? 0) > 1200 && <span className="faint small">Conversa longa: a IA lê em partes ao mesmo tempo. Ler a conversa e enquadrar a pessoa pode levar vários minutos neste computador.</span>}
           {note && <div className="alert info small">{note}</div>}
         </section>
       )}
