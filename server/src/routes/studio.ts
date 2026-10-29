@@ -90,23 +90,24 @@ export async function studioRoutes(app: FastifyInstance) {
     const sents = splitSentences(words);
     const brand = rowToBrand(db.prepare('SELECT * FROM brands WHERE id = ?').get(a.brand_id));
     try {
-      // Conversas longas são lidas em janelas (~40 mil caracteres, com sobreposição), e os melhores trechos de
+      // Conversas longas são lidas em janelas (~22 mil caracteres, com sobreposição, até 6 ao mesmo tempo), e os melhores trechos de
       // todas as janelas são unidos e ranqueados — assim um podcast de 1h+ é lido inteiro.
       const lines = sents.map((q) => `[${q.i}] ${q.s.toFixed(1)}–${q.e.toFixed(1)} ${q.text}`);
       const windows: [number, number][] = [];
       for (let i = 0; i < lines.length; ) {
         let j = i, size = 0;
-        while (j < lines.length && size + lines[j].length < 40000) size += lines[j++].length + 1;
+        while (j < lines.length && size + lines[j].length < 22000) size += lines[j++].length + 1;
         j = Math.max(j, i + 1);
         windows.push([i, j]);
         if (j >= lines.length) break;
         i = Math.max(i + 1, j - 12); // 12 frases de sobreposição para não partir uma história no meio
       }
-      const perWindow = auto ? 8 : Math.min(count, Math.ceil(count / windows.length) + 2);
+      const perWindow = auto ? 5 : Math.min(count, Math.ceil(count / windows.length) + 2);
       const all: ReelPick[] = [];
       const notes: string[] = [];
       let model = '';
-      for (const [wi, [i0, i1]] of windows.entries()) {
+      const readWindow = async (wi: number) => {
+        const [i0, i1] = windows[wi];
         const part = windows.length > 1 ? `\n(Parte ${wi + 1} de ${windows.length} da conversa: ${mmss(sents[i0].s)}–${mmss(sents[i1 - 1].e)}. Escolha só trechos desta parte; até ${perWindow}.)` : '';
       const r = await generateJson<{ segments: ReelPick[]; note: string }>({
         system: `Você é editor de cortes de entrevistas/podcasts para Reels e TikTok de uma agência brasileira.
@@ -131,7 +132,15 @@ ${lines.slice(i0, i1).join('\n')}${part}`,
         all.push(...(r.data.segments ?? []).filter((p) => p.from >= i0 && p.to < i1));
         if (r.data.note) notes.push(r.data.note);
         model = r.model;
+      };
+      // Até 6 partes ao mesmo tempo (cabe no limite gratuito do Gemini); uma parte que falhar não perde as outras.
+      const errors: unknown[] = [];
+      for (let w = 0; w < windows.length; w += 6) {
+        const res = await Promise.allSettled(windows.slice(w, w + 6).map((_, k) => readWindow(w + k)));
+        for (const x of res) if (x.status === 'rejected') errors.push(x.reason);
       }
+      if (errors.length === windows.length) throw errors[0];
+      if (errors.length) notes.unshift(`${errors.length} de ${windows.length} partes não puderam ser lidas agora (IA sobrecarregada); os cortes vêm das demais.`);
       // Une as janelas: melhores primeiro, sem sobreposição.
       all.sort((x, y) => (y.score ?? 0) - (x.score ?? 0));
       let picks = sanitizePicks(auto ? all.filter((p) => (p.score ?? 100) >= 55) : all, sents, minDur, maxDur).slice(0, count);

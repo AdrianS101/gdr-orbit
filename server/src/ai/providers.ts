@@ -258,7 +258,8 @@ async function geminiJson<T>(req: JsonRequest): Promise<JsonResult<T>> {
       const m = candidates[i];
       if ((geminiBusy.get(m) ?? 0) > Date.now() && i < candidates.length - 1) continue;
       for (let attempt = 0; attempt < 2; attempt++) {
-        res = await geminiCall(m, key, body);
+        // Textos longos (transcrições) levam mais: 20 s + ~2 s a cada mil caracteres, até 2 min.
+        res = await geminiCall(m, key, body, Math.min(120_000, 20_000 + (req.prompt.length / 1000) * 2000));
         if (res.status !== 503 && res.status !== 500) break;
         await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
       }

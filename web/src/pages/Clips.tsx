@@ -198,8 +198,9 @@ export function ClipsPage() {
           {tjob ? (
             <div className="col" style={{ gap: 4 }}><Progress value={tjob.progress} indeterminate={tjob.status === 'queued'} /><span className="faint small">Transcrevendo ({tjob.message}) — depois os cortes são gerados sozinhos. Pode deixar esta tela aberta.</span></div>
           ) : (
-            <button className="btn primary lg" disabled={!!busy} onClick={generate}>{busy ? <Spinner /> : <Zap size={18} />} {busy || (transcribed ? 'Gerar cortes com IA' : 'Transcrever e gerar cortes')}</button>
+            <button className="btn primary lg" disabled={!!busy} onClick={generate}>{busy ? <Spinner /> : <Zap size={18} />} {busy ? <>{busy} <Elapsed /></> : transcribed ? 'Gerar cortes com IA' : 'Transcrever e gerar cortes'}</button>
           )}
+          {busy && (asset.meta.duration ?? 0) > 1200 && <span className="faint small">Conversa longa: a IA lê em partes ao mesmo tempo. Pode levar de 1 a 4 minutos.</span>}
           {note && <div className="alert info small">{note}</div>}
         </section>
       )}
@@ -304,6 +305,18 @@ function PersonPicker({ assetId, duration, onClose, onPick }: { assetId: string;
       )}
     </Modal>
   );
+}
+
+/** Segundos desde que apareceu (mostra que o processamento continua andando). */
+function Elapsed() {
+  const [t0] = useState(Date.now());
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const i = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(i);
+  }, []);
+  const s = Math.floor((Date.now() - t0) / 1000);
+  return <span className="faint">({s >= 60 ? `${Math.floor(s / 60)} min ${s % 60} s` : `${s} s`})</span>;
 }
 
 function ToolMenu({ icon, label, items }: { icon: React.ReactNode; label: string; items: readonly (readonly [string, () => void])[] }) {
