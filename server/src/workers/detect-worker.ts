@@ -1,6 +1,6 @@
 // Processo isolado de detecção de pessoas (YOLOS-tiny via ONNX, local e sem custo).
 // Recebe por argumento (JSON) a lista de quadros a analisar e responde UMA linha JSON no stdout:
-//   {"type":"result","items":[{"key","box":{cx,cy,w,h}|null}]} | {"type":"error","message"}
+//   {"type":"result","items":[{"key","boxes":[{cx,cy,w,h,score}]}]} | {"type":"error","message"}
 // Usado no enquadramento automático: centralizar a pessoa ao transformar vídeo horizontal em vertical.
 import { spawn } from 'node:child_process';
 import { env, pipeline, RawImage } from '@huggingface/transformers';
@@ -17,7 +17,7 @@ const input: Input = JSON.parse(process.argv[2]);
 env.cacheDir = input.modelsDir;
 const send = (m: unknown) => process.stdout.write(JSON.stringify(m) + '\n');
 
-const W = 384;
+const W = 448;
 const H = Math.max(2, Math.round((W * input.height) / input.width / 2) * 2);
 
 function frame(file: string, t: number): Promise<Buffer> {
@@ -32,23 +32,23 @@ function frame(file: string, t: number): Promise<Buffer> {
 
 try {
   const detect = await pipeline('object-detection', 'Xenova/yolos-tiny', { dtype: 'q8' } as any);
-  const items: { key: string; box: { cx: number; cy: number; w: number; h: number } | null }[] = [];
+  type Box = { cx: number; cy: number; w: number; h: number; score: number };
+  const items: { key: string; boxes: Box[] }[] = [];
   for (const f of input.frames) {
     try {
       const buf = await frame(f.file, f.t);
       if (buf.length < W * H * 3) {
-        items.push({ key: f.key, box: null });
+        items.push({ key: f.key, boxes: [] });
         continue;
       }
       const img = new RawImage(new Uint8ClampedArray(buf.buffer, buf.byteOffset, W * H * 3), W, H, 3);
-      const res = (await (detect as any)(img, { threshold: 0.6 })) as { label: string; score: number; box: { xmin: number; ymin: number; xmax: number; ymax: number } }[];
-      // A pessoa principal: maior área × confiança (quem está mais perto da câmera).
-      const people = res.filter((r) => r.label === 'person').map((r) => ({ ...r, area: (r.box.xmax - r.box.xmin) * (r.box.ymax - r.box.ymin) }));
-      people.sort((a, b) => b.area * b.score - a.area * a.score);
-      const p = people[0];
-      items.push({ key: f.key, box: p ? { cx: (p.box.xmin + p.box.xmax) / 2 / W, cy: (p.box.ymin + p.box.ymax) / 2 / H, w: (p.box.xmax - p.box.xmin) / W, h: (p.box.ymax - p.box.ymin) / H } : null });
+      const res = (await (detect as any)(img, { threshold: 0.45 })) as { label: string; score: number; box: { xmin: number; ymin: number; xmax: number; ymax: number } }[];
+      // Todas as pessoas do quadro (quem focar é decidido depois, conforme a escolha do usuário).
+      const boxes = res.filter((r) => r.label === 'person').map((p) => ({ cx: (p.box.xmin + p.box.xmax) / 2 / W, cy: (p.box.ymin + p.box.ymax) / 2 / H, w: (p.box.xmax - p.box.xmin) / W, h: (p.box.ymax - p.box.ymin) / H, score: p.score }));
+      // Pessoas pequenas demais (fundo, plateia, reflexos) não contam.
+      items.push({ key: f.key, boxes: boxes.filter((b) => b.w * b.h > 0.02) });
     } catch {
-      items.push({ key: f.key, box: null });
+      items.push({ key: f.key, boxes: [] });
     }
   }
   send({ type: 'result', items });

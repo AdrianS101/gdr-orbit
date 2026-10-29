@@ -158,7 +158,7 @@ export function applyAction(tl: Timeline, a: EditAction, ctx: ActionContext): Ac
       return { timeline: { ...r.tl, clips: r.tl.clips.map((c) => (r.ids.includes(c.id) ? { ...c, zoom: { from: z, to: z } } : c)) }, label };
     }
     case 'dynamic_zoom': {
-      return { timeline: { ...tl, clips: tl.clips.map((c, i) => ({ ...c, zoom: i % 2 === 0 ? { from: 1, to: 1.12 } : { from: 1.12, to: 1 } })) }, label };
+      return { timeline: { ...tl, clips: tl.clips.map((c, i) => ({ ...c, zoom: i % 2 === 0 ? { from: 1, to: 1.08 } : { from: 1.14, to: 1.14 } })) }, label };
     }
     case 'speed': {
       const [s, e] = rng(a.start, a.end);

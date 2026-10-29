@@ -2,10 +2,11 @@
 // trecho, vídeo e ações (publicar, baixar, editar) + ações em massa e barra de ajustes para os selecionados.
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Zap, Download, Trash2, Send, Pencil, Smartphone, Square, Monitor, VolumeX, Captions, Palette, Wand2, Mic, RefreshCcw, CheckSquare, Square as Box } from 'lucide-react';
+import { ArrowLeft, Zap, Download, Trash2, Send, Pencil, Smartphone, Square, Monitor, VolumeX, Captions, Palette, Wand2, Mic, RefreshCcw, CheckSquare, Square as Box, ScanFace } from 'lucide-react';
 import { api, media } from '../lib/api.ts';
 import { useApp, showError, onJob } from '../lib/store.ts';
-import { Empty, Progress, Spinner } from '../components/ui.tsx';
+import { Empty, Modal, Progress, Spinner } from '../components/ui.tsx';
+import { COLOR_PRESETS } from '../../../shared/effects.ts';
 import type { Asset } from '../../../shared/types.ts';
 import type { EditAction } from '../../../shared/edit-actions.ts';
 
@@ -20,6 +21,8 @@ interface Clip {
 }
 
 const LENGTHS = [['auto', 'Automático'], ['lt30', '< 30 s'], ['30-60', '30–60 s'], ['60-90', '60–90 s'], ['90-180', '90 s–3 min']] as const;
+type Focus = { mode: 'largest' | 'left' | 'right' | 'center' } | { mode: 'pick'; x: number };
+const FOCUS: [Exclude<Focus['mode'], 'pick'>, string][] = [['largest', 'Pessoa principal'], ['left', 'Quem está à esquerda'], ['right', 'Quem está à direita'], ['center', 'Centro (sem detectar)']];
 const mmss = (t: number) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
 export function ClipsPage() {
@@ -34,7 +37,8 @@ export function ClipsPage() {
   const [note, setNote] = useState('');
   const [showPrefs, setShowPrefs] = useState(false);
   const [transcribeJob, setTranscribeJob] = useState<string | null>(null);
-  const [p, setP] = useState({ length: 'auto', countMode: 'auto' as 'auto' | 'fixed', count: 5, format: '9:16', style: 'animada', highlightKeywords: true, autoLight: true, autoReframe: true, removePauses: true, logo: true, autoExport: true, topics: '', moments: '' });
+  const [p, setP] = useState({ length: 'auto', countMode: 'auto' as 'auto' | 'fixed', count: 5, format: '9:16', style: 'animada', highlightKeywords: true, autoLight: true, removePauses: true, logo: true, autoExport: true, captions: true, hook: true, denoise: true, motion: 'auto', filter: 'auto', focus: { mode: 'largest' } as Focus, topics: '', moments: '' });
+  const [picker, setPicker] = useState<null | ((f: Focus) => void)>(null);
 
   const load = () => {
     api.get<Asset>(`/api/assets/${assetId}`).then(setAsset, showError);
@@ -67,7 +71,7 @@ export function ClipsPage() {
       setNote(sug.note || '');
       if (!sug.segments.length) return;
       setBusy(`Montando ${sug.segments.length} corte(s): enquadramento, legenda, luz, ritmo…`);
-      await api.post(`/api/assets/${asset.id}/reels/create`, { segments: sug.segments, viral: true, style: p.style, format: p.format, highlightKeywords: p.highlightKeywords, autoLight: p.autoLight, autoReframe: p.autoReframe, removePauses: p.removePauses, logo: p.logo, autoExport: p.autoExport, hookTitle: p.style === 'impacto' });
+      await api.post(`/api/assets/${asset.id}/reels/create`, { segments: sug.segments, viral: true, style: p.style, format: p.format, highlightKeywords: p.captions && p.highlightKeywords, autoLight: p.autoLight, autoReframe: p.focus.mode !== 'center', reframe: p.focus, removePauses: p.removePauses, logo: p.logo, autoExport: p.autoExport, hookTitle: p.style === 'impacto', captions: p.captions, hook: p.hook, denoise: p.denoise, motion: p.motion, filter: p.filter });
       setShowPrefs(false);
       load();
     } catch (e) {
@@ -87,7 +91,7 @@ export function ClipsPage() {
   }, [jobs, transcribeJob]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const list = useMemo(() => [...(clips ?? [])].sort((a, b) => (sort === 'score' ? (b.meta.score ?? 0) - (a.meta.score ?? 0) : a.meta.in - b.meta.in)), [clips, sort]);
-  const bulk = async (action: 'export' | 'delete' | 'post' | 'apply', extra: { edit?: EditAction; format?: string } = {}, ids = sel) => {
+  const bulk = async (action: 'export' | 'delete' | 'post' | 'apply', extra: { edit?: EditAction | { type: 'no_captions' }; format?: string; reframe?: Focus } = {}, ids = sel) => {
     if (!ids.length) return useApp.getState().toast({ kind: 'info', title: 'Selecione ao menos um corte.' });
     if (action === 'delete' && !confirm(`Excluir ${ids.length} corte(s)? Os projetos serão apagados.`)) return;
     try {
@@ -146,17 +150,42 @@ export function ClipsPage() {
             </div>
             <div className="col" style={{ gap: 6 }}>
               <span className="label">Estilo</span>
-              <select className="select sm" value={p.style} onChange={(e) => setP({ ...p, style: e.target.value })}>
+              <select className="select sm" value={p.style} disabled={!p.captions} title={p.captions ? '' : 'Sem legendas'} onChange={(e) => setP({ ...p, style: e.target.value })}>
                 <option value="animada">Animada (palavra cresce, verde/amarelo)</option>
                 <option value="podcast">Podcast cinematográfico (discreta, cor de cinema)</option>
                 <option value="impacto">Impacto (legenda grande, cortes rápidos)</option>
               </select>
             </div>
           </div>
-          <div className="row wrap small" style={{ gap: 16 }}>
-            {([['autoReframe', 'Enquadrar a pessoa automaticamente'], ['highlightKeywords', 'Destacar palavras-chave'], ['autoLight', 'Corrigir a luz automaticamente'], ['removePauses', 'Remover pausas'], ['logo', 'Logo da marca'], ['autoExport', 'Já exportar os MP4']] as const).map(([k, l]) => (
-              <label key={k} className="row"><input type="checkbox" checked={p[k]} onChange={(e) => setP({ ...p, [k]: e.target.checked })} /> {l}</label>
-            ))}
+          <div className="col" style={{ gap: 6 }}>
+            <span className="label">Quem focar ao virar o vídeo para vertical</span>
+            <div className="row wrap" style={{ gap: 6 }}>
+              {FOCUS.map(([k, l]) => <button key={k} className={`chip-btn ${p.focus.mode === k ? 'on' : ''}`} onClick={() => setP({ ...p, focus: { mode: k } })}>{l}</button>)}
+              <button className={`chip-btn ${p.focus.mode === 'pick' ? 'on' : ''}`} onClick={() => setPicker(() => (f: Focus) => setP((q) => ({ ...q, focus: f })))}><ScanFace size={13} /> {p.focus.mode === 'pick' ? 'Pessoa escolhida (trocar)' : 'Escolher na imagem'}</button>
+            </div>
+          </div>
+          <div className="col" style={{ gap: 6 }}>
+            <span className="label">O que entra nos cortes</span>
+            <div className="row wrap small" style={{ gap: 16 }}>
+              {([['captions', 'Legendas'], ['highlightKeywords', 'Destacar palavras-chave'], ['hook', 'Abrir com a frase mais forte'], ['removePauses', 'Remover pausas'], ['autoLight', 'Corrigir a luz'], ['denoise', 'Limpar o áudio'], ['logo', 'Logo da marca'], ['autoExport', 'Já exportar os MP4']] as const).map(([k, l]) => (
+                <label key={k} className="row" style={{ opacity: k === 'highlightKeywords' && !p.captions ? 0.5 : 1 }}><input type="checkbox" disabled={k === 'highlightKeywords' && !p.captions} checked={p[k]} onChange={(e) => setP({ ...p, [k]: e.target.checked })} /> {l}</label>
+              ))}
+            </div>
+            <div className="row wrap" style={{ gap: 12 }}>
+              <label className="row small" style={{ gap: 6 }}>Filtro
+                <select className="select sm" style={{ width: 'auto' }} value={p.filter} onChange={(e) => setP({ ...p, filter: e.target.value })}>
+                  <option value="auto">O do estilo</option>
+                  <option value="none">Sem filtro</option>
+                  {Object.entries(COLOR_PRESETS).filter(([k]) => k !== 'none').map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+              </label>
+              <label className="row small" style={{ gap: 6 }}>Movimento
+                <select className="select sm" style={{ width: 'auto' }} value={p.motion} onChange={(e) => setP({ ...p, motion: e.target.value })}>
+                  <option value="auto">Zoom suave e troca de plano</option>
+                  <option value="none">Sem zoom (câmera parada)</option>
+                </select>
+              </label>
+            </div>
           </div>
           <label className="col" style={{ gap: 4 }}>
             <span className="label">Assuntos (opcional)</span>
@@ -240,14 +269,40 @@ export function ClipsPage() {
             <span className="faint" style={{ fontSize: 10, textAlign: 'center' }}>{sel.length ? `${sel.length} selec.` : 'Selecione'}</span>
             <ToolMenu icon={<Smartphone size={18} />} label="Formato" items={[['9:16', () => bulk('apply', { format: '9:16' })], ['1:1', () => bulk('apply', { format: '1:1' })], ['16:9', () => bulk('apply', { format: '16:9' })]]} />
             <button className="clips-tool" onClick={() => bulk('apply', { edit: { type: 'remove_pauses' } })}><VolumeX size={18} /><span>Remover silêncio</span></button>
-            <ToolMenu icon={<Captions size={18} />} label="Legenda" items={[['Animada', () => bulk('apply', { edit: { type: 'captions', preset: 'bounce', uppercase: true } })], ['Destaque', () => bulk('apply', { edit: { type: 'captions', preset: 'highlight', uppercase: true } })], ['Pop discreta', () => bulk('apply', { edit: { type: 'captions', preset: 'pop', uppercase: false } })], ['Clássica', () => bulk('apply', { edit: { type: 'captions', preset: 'classic' } })]]} />
+            <ToolMenu icon={<Captions size={18} />} label="Legenda" items={[['Animada', () => bulk('apply', { edit: { type: 'captions', preset: 'bounce', uppercase: true } })], ['Destaque', () => bulk('apply', { edit: { type: 'captions', preset: 'highlight', uppercase: true } })], ['Pop discreta', () => bulk('apply', { edit: { type: 'captions', preset: 'pop', uppercase: false } })], ['Clássica', () => bulk('apply', { edit: { type: 'captions', preset: 'classic' } })], ['Sem legenda', () => bulk('apply', { edit: { type: 'no_captions' } })]]} />
+            <ToolMenu icon={<ScanFace size={18} />} label="Quem focar" items={[...FOCUS.map(([k, l]) => [l, () => bulk('apply', { reframe: { mode: k } })] as const), ['Escolher na imagem', () => setPicker(() => (f: Focus) => bulk('apply', { reframe: f }))] as const]} />
             <ToolMenu icon={<Palette size={18} />} label="Filtro" items={[['Podcast', () => bulk('apply', { edit: { type: 'filter', preset: 'podcast' } })], ['Cinema', () => bulk('apply', { edit: { type: 'filter', preset: 'cinema' } })], ['Vívido', () => bulk('apply', { edit: { type: 'filter', preset: 'vivido' } })], ['Quente', () => bulk('apply', { edit: { type: 'filter', preset: 'quente' } })], ['Original', () => bulk('apply', { edit: { type: 'filter', preset: 'none' } })]]} />
             <button className="clips-tool" onClick={() => bulk('apply', { edit: { type: 'dynamic_zoom' } })}><Wand2 size={18} /><span>Zoom dinâmico</span></button>
             <button className="clips-tool" onClick={() => bulk('apply', { edit: { type: 'denoise', level: 'light' } })}><Mic size={18} /><span>Limpar áudio</span></button>
           </aside>
         </div>
       )}
+      {picker && <PersonPicker assetId={asset.id} duration={asset.meta.duration ?? 60} onClose={() => setPicker(null)} onPick={(f) => { picker(f); setPicker(null); }} />}
     </>
+  );
+}
+
+/** Mostra um quadro do vídeo com as pessoas encontradas; clicar numa pessoa (ou em qualquer ponto) escolhe quem seguir. */
+function PersonPicker({ assetId, duration, onClose, onPick }: { assetId: string; duration: number; onClose: () => void; onPick: (f: Focus) => void }) {
+  const [t, setT] = useState(duration * 0.3);
+  const [data, setData] = useState<{ image: string; people: { cx: number; cy: number; w: number; h: number }[] } | null>(null);
+  useEffect(() => {
+    setData(null);
+    api.get<{ image: string; people: { cx: number; cy: number; w: number; h: number }[] }>(`/api/assets/${assetId}/people?t=${t.toFixed(1)}`).then(setData, showError);
+  }, [assetId, t]);
+  return (
+    <Modal wide title="Quem focar?" onClose={onClose} footer={<><span className="faint small">Quadro em {mmss(t)}</span><span className="spacer" /><button className="btn" onClick={() => setT((x) => (x + duration * 0.17) % duration)}><RefreshCcw size={14} /> Outro quadro</button></>}>
+      <p className="small faint" style={{ marginTop: 0 }}>Clique na pessoa que deve ficar no centro do corte. Em cada trecho, o sistema segue quem estiver mais perto dessa posição na imagem.</p>
+      {!data ? <Spinner /> : (
+        <div style={{ position: 'relative', cursor: 'crosshair' }} onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); onPick({ mode: 'pick', x: (e.clientX - r.left) / r.width }); }}>
+          <img src={data.image} alt="Quadro do vídeo" style={{ width: '100%', display: 'block', borderRadius: 8 }} />
+          {data.people.map((b, i) => (
+            <button key={i} className="person-box" aria-label={`Pessoa ${i + 1}`} style={{ left: `${(b.cx - b.w / 2) * 100}%`, top: `${(b.cy - b.h / 2) * 100}%`, width: `${b.w * 100}%`, height: `${b.h * 100}%` }} onClick={(e) => { e.stopPropagation(); onPick({ mode: 'pick', x: b.cx }); }}><span>Focar nesta pessoa</span></button>
+          ))}
+          {!data.people.length && <div className="alert info small" style={{ position: 'absolute', left: 8, bottom: 8 }}>Ninguém detectado neste quadro — clique onde a pessoa costuma ficar ou troque de quadro.</div>}
+        </div>
+      )}
+    </Modal>
   );
 }
 

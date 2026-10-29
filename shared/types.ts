@@ -31,6 +31,9 @@ export interface VideoClip {
   color?: ColorAdjust;
   /** Zoom animado ao longo do trecho (1 = sem zoom). */
   zoom?: { from: number; to: number };
+  /** Ponto para onde o zoom aproxima, no quadro final (0..1). Padrão: centro, um pouco acima (rosto). */
+  zoomX?: number;
+  zoomY?: number;
   /** Transição na entrada deste trecho (entre o trecho anterior e este). */
   transition?: { type: TransitionType; duration: number };
   /** Redução de ruído do áudio (aplicada na exportação; amostra tratada disponível no painel). */

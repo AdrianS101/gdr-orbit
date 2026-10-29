@@ -7,7 +7,7 @@ import JASSUB from 'jassub';
 import { useEditor } from './store.ts';
 import { media } from '../lib/api.ts';
 import { buildAss } from '../../../shared/ass.ts';
-import { barHeight, clipFx, colorSvg, crossAt, fadeAt, glitchAt, shakeAt, isNeutral, musicGainAt, speechIntervals, zoomAt } from '../../../shared/effects.ts';
+import { barHeight, clipFx, colorSvg, crossAt, fadeAt, glitchAt, shakeAt, isNeutral, musicGainAt, speechIntervals, zoomAnchor, zoomAt } from '../../../shared/effects.ts';
 import { clipAt, layoutClips, overlapOf, sourceTimeAt, timelineDuration, SAFE_AREAS_VERTICAL, type PlacedClip } from '../../../shared/timeline.ts';
 import { audioClipGain, layerDuration, overlayBase, setAt, stackedLayers, transformAt } from '../../../shared/keyframes.ts';
 import type { Asset, AudioClip, LayerClip, Timeline, VideoClip } from '../../../shared/types.ts';
@@ -225,7 +225,7 @@ export function Player({ showSafe }: { showSafe: boolean }) {
       const sh = shakeOf(c, lt);
       const zz = z * sc * (sh ? 1.06 : 1);
       v.style.transform = `${tx || ty || sh ? `translate(${tx + (sh?.x ?? 0)}%, ${ty + (sh?.y ?? 0)}%) ` : ''}${zz !== 1 ? `scale(${zz})` : ''}`;
-      v.style.transformOrigin = c ? `${c.focusX * 100}% ${c.focusY * 100}%` : '';
+      v.style.transformOrigin = c ? `${zoomAnchor(c).x * 100}% ${zoomAnchor(c).y * 100}%` : '';
       v.style.filter = filter;
     };
     paint(act, activeClip, zoom, (crossing?.out.tx ?? 0) + (glitch?.jump ?? 0), [color ? 'url(#orbit-color)' : '', glitch ? `drop-shadow(-${glitch.shift / 2}px 0 rgba(255,0,0,.75)) drop-shadow(${glitch.shift / 2}px 0 rgba(0,255,255,.75)) contrast(1.25)` : ''].filter(Boolean).join(' '), crossing?.out.ty ?? 0, crossing?.out.scale ?? 1, localT);

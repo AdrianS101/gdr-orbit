@@ -11,7 +11,7 @@ import { DEFAULT_CAPTION_STYLE, defaultCaptionY, emptyTimeline, uid } from '../.
 import { ANIMATED_CAPTION, hookRange, markKeywords, PODCAST_CAPTION, rhythmFromCuts, sanitizePicks, sentenceRange, splitSentences, VIRAL_CAPTION, type ReelPick, type RhythmProfile } from '../../../shared/studio.ts';
 import { enqueue } from '../jobs/queue.ts';
 import { exposureCorrection, measureExposure } from '../lib/exposure.ts';
-import { autoReframe } from '../lib/reframe.ts';
+import { autoReframe, type ReframeTarget } from '../lib/reframe.ts';
 import { colorFromPreset } from '../../../shared/effects.ts';
 import { availableEncoders } from '../lib/ffmpeg.ts';
 import { applyAction, type ActionContext, type EditAction } from '../../../shared/edit-actions.ts';
@@ -160,7 +160,7 @@ ${lines.slice(i0, i1).join('\n')}${part}`,
 
   app.post('/api/assets/:id/reels/create', async (req) => {
     const a = assetRow((req.params as any).id);
-    const b = (req.body ?? {}) as { segments: { in: number; out: number; title: string; hook: string; hookIn?: number | null; hookOut?: number | null; score?: number; keywords?: string[]; why?: string; text?: string; structure?: unknown }[]; captions?: boolean; logo?: boolean; hookTitle?: boolean; removePauses?: boolean; viral?: boolean; autoExport?: boolean; style?: 'impacto' | 'podcast' | 'animada'; format?: '9:16' | '1:1' | '16:9'; highlightKeywords?: boolean; autoLight?: boolean; autoReframe?: boolean };
+    const b = (req.body ?? {}) as { segments: { in: number; out: number; title: string; hook: string; hookIn?: number | null; hookOut?: number | null; score?: number; keywords?: string[]; why?: string; text?: string; structure?: unknown }[]; captions?: boolean; logo?: boolean; hookTitle?: boolean; removePauses?: boolean; viral?: boolean; autoExport?: boolean; style?: 'impacto' | 'podcast' | 'animada'; format?: '9:16' | '1:1' | '16:9'; highlightKeywords?: boolean; autoLight?: boolean; autoReframe?: boolean; reframe?: ReframeTarget; hook?: boolean; filter?: string; motion?: 'auto' | 'none'; denoise?: boolean };
     if (!b.segments?.length) throw badRequest('Escolha ao menos um corte.');
     const meta = JSON.parse(a.meta);
     const words = wordsOf(a.id) ?? [];
@@ -195,7 +195,7 @@ ${lines.slice(i0, i1).join('\n')}${part}`,
         tl.captions.style = { ...tl.captions.style, ...(podcast ? PODCAST_CAPTION : animada ? ANIMATED_CAPTION : VIRAL_CAPTION) };
         // Abertura com a frase mais forte (teaser) e corte com flash para o trecho completo.
         const hi = Number(s.hookIn), ho = Number(s.hookOut);
-        if (Number.isFinite(hi) && Number.isFinite(ho) && ho - hi >= 1 && ho - hi <= 8) {
+        if (b.hook !== false && Number.isFinite(hi) && Number.isFinite(ho) && ho - hi >= 1 && ho - hi <= 8) {
           tl.clips = [{ id: uid('c_'), ...base, in: hi, out: ho, zoom: { from: 1.12, to: 1.18 } }, { ...tl.clips[0], transition: { type: 'flash', duration: 0.3 } }];
         }
       }
@@ -204,9 +204,14 @@ ${lines.slice(i0, i1).join('\n')}${part}`,
       if (b.captions !== false && words.length) steps.push(podcast ? { type: 'captions', highlightColor: '#FFFFFF', uppercase: false } : animada ? { type: 'captions', highlightColor: ANIMATED_CAPTION.highlightColor, uppercase: true } : { type: 'captions' });
       if (b.logo !== false && brand.profile.logoAssetId && assets[brand.profile.logoAssetId]) steps.push({ type: 'logo' });
       if (b.hookTitle !== false && s.hook?.trim() && !podcast && !animada) steps.push({ type: 'text', text: s.hook.trim(), start: 0, duration: 3, kind: 'title', anim: 'pop' });
-      if (b.viral && podcast) steps.push({ type: 'filter', preset: 'podcast' }, { type: 'rhythm', shotLength: 6 }, { type: 'denoise', level: 'light' });
-      else if (b.viral && animada) steps.push({ type: 'rhythm', shotLength: 3.2 }, { type: 'denoise', level: 'light' });
-      else if (b.viral) steps.push({ type: 'filter', preset: 'cinema' }, { type: 'rhythm', shotLength: 2.6 }, { type: 'denoise', level: 'light' });
+      // Personalização: filtro, movimento (ritmo de planos + zoom) e limpeza do áudio podem ser trocados ou desligados.
+      const motion = b.motion !== 'none';
+      if (b.viral) {
+        const preset = b.filter && b.filter !== 'auto' ? b.filter : podcast ? 'podcast' : animada ? null : 'cinema';
+        if (preset && preset !== 'none') steps.push({ type: 'filter', preset: preset as any });
+        if (motion) steps.push({ type: 'rhythm', shotLength: podcast ? 6 : animada ? 3.2 : 2.6 });
+        if (b.denoise !== false) steps.push({ type: 'denoise', level: 'light' });
+      }
       const warnings: string[] = [];
       for (const st of steps) {
         try {
@@ -217,13 +222,14 @@ ${lines.slice(i0, i1).join('\n')}${part}`,
       }
       if (b.viral && podcast) {
         // Movimento de câmera lento (push-in) no lugar de cortes secos; alterna o enquadramento a cada plano.
-        tl.clips = tl.clips.map((c, i) => ({ ...c, zoom: i % 2 === 0 ? { from: 1, to: 1.07 } : { from: 1.1, to: 1.16 } }));
+        if (motion) tl.clips = tl.clips.map((c, i) => ({ ...c, zoom: i % 2 === 0 ? { from: 1, to: 1.06 } : { from: 1.12, to: 1.15 } }));
         if (handle) {
           const total = tl.clips.reduce((n, c) => n + (c.out - c.in) / c.speed, 0);
           tl.texts = [...(tl.texts ?? []), { id: uid('t_'), start: 0, end: total, text: '@' + handle.toUpperCase(), kind: 'caption', anim: 'none', x: 0.5, y: PODCAST_CAPTION.posY - 0.045, size: 1.9, color: '#D8D8D8', bg: '', font: PODCAST_CAPTION.font }];
         }
       }
       // Palavras-chave sempre destacadas na legenda.
+      if (!motion) tl.clips = tl.clips.map((c) => ({ ...c, zoom: undefined }));
       if (b.highlightKeywords !== false && s.keywords?.length) tl.captions = { ...tl.captions, cues: markKeywords(tl.captions.cues, s.keywords) };
       // Luz automática (mesma conta de cor na prévia e na exportação).
       const lt = lights[k];
@@ -244,7 +250,7 @@ ${lines.slice(i0, i1).join('\n')}${part}`,
     // Enquadramento automático: acha a pessoa em cada trecho e centraliza o recorte nela (um único carregamento do detector).
     let reframe: { found: number; total: number } | null = null;
     if (b.autoReframe !== false && pending.length && meta.width && meta.height) {
-      const r = await autoReframe(proxyFile, { width: meta.width, height: meta.height }, pending.map((p) => p.tl));
+      const r = await autoReframe(proxyFile, { width: meta.width, height: meta.height }, pending.map((p) => p.tl), b.reframe ?? { mode: 'largest' });
       r.timelines.forEach((tl, i) => (pending[i].tl = tl));
       reframe = { found: r.found, total: r.total };
     }

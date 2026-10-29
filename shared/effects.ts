@@ -121,9 +121,13 @@ export function clipFx(clips: VideoClip[], i: number): ClipFx {
   return { D, head: i > 0 ? half(c.transition) : null, tail: next ? half(next.transition, Math.min(D, clipDuration(next))) : null };
 }
 
-/** Fator de zoom no instante t (segundos desde o início do trecho). */
+/** Ponto do zoom no quadro final (prévia: transform-origin; exportação: recorte após ampliar). */
+export const zoomAnchor = (c: VideoClip) => ({ x: Math.min(1, Math.max(0, c.zoomX ?? 0.5)), y: Math.min(1, Math.max(0, c.zoomY ?? 0.42)) });
+
+/** Fator de zoom no instante t (segundos desde o início do trecho). Movimento suave (acelera e desacelera). */
 export function zoomAt(c: VideoClip, fx: ClipFx, t: number): number {
-  const z = c.zoom ? c.zoom.from + (c.zoom.to - c.zoom.from) * Math.min(1, Math.max(0, t / fx.D)) : 1;
+  const u = Math.min(1, Math.max(0, t / fx.D));
+  const z = c.zoom ? c.zoom.from + (c.zoom.to - c.zoom.from) * u * u * (3 - 2 * u) : 1;
   const h = fx.head?.type === 'zoom' ? 1 + ZOOM_PUNCH * Math.max(0, 1 - t / fx.head.d) : 1;
   const tl = fx.tail?.type === 'zoom' ? 1 + ZOOM_PUNCH * Math.max(0, (t - (fx.D - fx.tail.d)) / fx.tail.d) : 1;
   return z * h * tl;
@@ -132,7 +136,8 @@ export function zoomAt(c: VideoClip, fx: ClipFx, t: number): number {
 /** Mesma fórmula de zoomAt, como expressão do FFmpeg (variável t). */
 export function zoomExpr(c: VideoClip, fx: ClipFx, t = 't'): string | null {
   const parts: string[] = [];
-  if (c.zoom && (c.zoom.from !== 1 || c.zoom.to !== 1)) parts.push(`(${r4(c.zoom.from)}+${r4(c.zoom.to - c.zoom.from)}*min(1\\,${t}/${r4(fx.D)}))`);
+  const u = `min(1\\,${t}/${r4(fx.D)})`;
+  if (c.zoom && (c.zoom.from !== 1 || c.zoom.to !== 1)) parts.push(c.zoom.from === c.zoom.to ? String(r4(c.zoom.from)) : `(${r4(c.zoom.from)}+${r4(c.zoom.to - c.zoom.from)}*${u}*${u}*(3-2*${u}))`);
   if (fx.head?.type === 'zoom') parts.push(`(1+${ZOOM_PUNCH}*max(0\\,1-${t}/${r4(fx.head.d)}))`);
   if (fx.tail?.type === 'zoom') parts.push(`(1+${ZOOM_PUNCH}*max(0\\,(${t}-${r4(fx.D - fx.tail.d)})/${r4(fx.tail.d)}))`);
   return parts.length ? parts.join('*') : null;

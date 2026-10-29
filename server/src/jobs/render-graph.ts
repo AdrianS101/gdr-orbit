@@ -2,7 +2,7 @@
 // Usa a mesma matemática de enquadramento, posição de logo e legendas (ASS) da prévia.
 import type { AssetMeta, Keyframe, Timeline, Transform } from '../../../shared/types.ts';
 import { clipDuration, even, layoutClips, overlapOf, timelineDuration } from '../../../shared/timeline.ts';
-import { barHeight, clipFx, colorFfmpeg, isNeutral, speechIntervals, XFADE, zoomExpr } from '../../../shared/effects.ts';
+import { barHeight, clipFx, colorFfmpeg, isNeutral, speechIntervals, XFADE, zoomAnchor, zoomExpr } from '../../../shared/effects.ts';
 import { denoiseFilter, isAnimated, kfExpr, layerDuration, maxScale, opacityCommands, overlayBase, sortKfs, stackedLayers } from '../../../shared/keyframes.ts';
 
 const fx2 = (v: number) => Math.min(1, Math.max(0, v));
@@ -84,8 +84,10 @@ export function buildRenderArgs(tl: Timeline, st: RenderSettings, inp: RenderInp
     // Efeitos do trecho: zoom animado, cor e transições (mesmas fórmulas da prévia, em shared/effects.ts).
     const cfx = clipFx(tl.clips, i);
     let post = '';
-    const zx = zoomExpr(c, cfx, 'it');
-    if (zx) post += `zoompan=z='${zx}':x='(iw-iw/zoom)*${f(fx2(c.focusX))}':y='(ih-ih/zoom)*${f(fx2(c.focusY))}':d=1:s=${W}x${H}:fps=${fps},`;
+    // Zoom suave: amplia o quadro inteiro a cada quadro (sem o arredondamento do zoompan, que treme) e recorta no ponto do zoom.
+    const zx = zoomExpr(c, cfx, 't');
+    const za = zoomAnchor(c);
+    if (zx) post += `scale=w='2*trunc(${W}*(${zx})/2)':h='2*trunc(${H}*(${zx})/2)':eval=frame:flags=bicubic,crop=${W}:${H}:x='(iw-${W})*${f(za.x)}':y='(ih-${H})*${f(za.y)}',`;
     if (!isNeutral(c.color)) post += `${colorFfmpeg(c.color!)},`;
     // Glitch digital: canais deslocados e ruído só durante a transição (mesma janela de glitchAt).
     const gl = (a: number, b: number) => `rgbashift=rh=-14:bh=14:enable='between(t,${f(a)},${f(b)})',noise=alls=38:allf=t:enable='between(t,${f(a)},${f(b)})',`;
