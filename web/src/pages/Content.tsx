@@ -16,6 +16,8 @@ interface MediaItem {
   kind: 'video' | 'image';
   name: string;
   url: string;
+  download?: string;
+  duration?: number | null;
   projectId?: string;
   settings: { width?: number; height?: number };
 }
@@ -126,6 +128,7 @@ function Composer({ brandId, post, onClose, onSaved }: { brandId: string; post: 
     const h = m?.settings.height;
     if (w && h && m!.kind === 'image' && (w / h < 0.8 || w / h > 1.91)) warnings.push(`"${m!.name}" está fora da proporção aceita pelo feed do Instagram (de 4:5 a 1,91:1).`);
     if (w && h && type === 'video' && w / h > 1) warnings.push('Vídeo horizontal: no Reels e no TikTok o ideal é 9:16.');
+    if (type === 'video' && (m?.duration ?? 0) > 55 && accounts.some((a) => targets.includes(a.id) && a.network === 'instagram')) warnings.push(`Vídeo de ${Math.round(m!.duration!)} s: o Instagram tem recusado vídeos acima de ~55 s enviados por este app. Se recusar, o post fica como "Publique no app" com o vídeo e o texto prontos.`);
   }
   const selAccounts = accounts.filter((a) => targets.includes(a.id));
   const previewNet = selAccounts.some((a) => a.network === net) ? net : selAccounts[0]?.network ?? net;
@@ -302,13 +305,13 @@ function TargetRow({ t, post, media, onChange }: { t: Target; post: Post; media:
         <span className={`badge ${t.status === 'published' ? 'success' : t.status === 'failed' ? 'danger' : 'warning'}`}>{t.status === 'published' ? 'Publicado' : t.status === 'failed' ? 'Falhou' : t.status === 'manual' ? 'Publique no app' : 'Pendente'}</span>
         {t.permalink && <a className="btn ghost sm" href={t.permalink} target="_blank" rel="noreferrer"><ExternalLink size={12} /> Abrir</a>}
       </div>
-      {t.error && <div className="small" style={{ color: 'var(--danger)' }}>{t.error}</div>}
+      {t.error && <div className="small" style={{ color: t.status === 'manual' ? 'var(--warning)' : 'var(--danger)' }}>{t.error}</div>}
       {t.status === 'manual' && (
         <div className="col" style={{ gap: 6 }}>
           <div className="row wrap" style={{ gap: 6 }}>
-            {video && <a className="btn sm" href={`${video.url}?download=1`}><Download size={12} /> Baixar vídeo</a>}
-            <button className="btn sm" onClick={() => navigator.clipboard.writeText(post.captions.tiktok || post.caption)}><Copy size={12} /> Copiar texto</button>
-            <a className="btn sm" href="https://www.tiktok.com/upload" target="_blank" rel="noreferrer"><ExternalLink size={12} /> Abrir TikTok</a>
+            {video && <a className="btn sm" href={video.download ?? `${video.url}?download=1`}><Download size={12} /> Baixar vídeo</a>}
+            <button className="btn sm" onClick={() => navigator.clipboard.writeText((post.captions as Record<string, string>)[t.network] || post.caption)}><Copy size={12} /> Copiar texto</button>
+            {t.network === 'tiktok' ? <a className="btn sm" href="https://www.tiktok.com/upload" target="_blank" rel="noreferrer"><ExternalLink size={12} /> Abrir TikTok</a> : <a className="btn sm" href="https://www.instagram.com/" target="_blank" rel="noreferrer"><ExternalLink size={12} /> Abrir Instagram</a>}
           </div>
           <div className="row">
             <input className="input sm" placeholder="Cole o link do vídeo publicado" value={link} onChange={(e) => setLink(e.target.value)} />
@@ -418,8 +421,8 @@ export function ContentPage() {
               return (
                 <div key={d.toISOString()} className={`cal-day ${d.getMonth() !== month.getMonth() ? 'out' : ''} ${today ? 'today' : ''}`}>
                   <span className="cal-num">{d.getDate()}</span>
-                  {(byDay.get(key(d)) ?? []).slice(0, 3).map(chip)}
-                  {(byDay.get(key(d)) ?? []).length > 3 && <span className="faint" style={{ fontSize: 11 }}>+{(byDay.get(key(d)) ?? []).length - 3} mais…</span>}
+                  {/* Todos os posts do dia aparecem (o dia cresce); antes só 3 e o resto ficava escondido. */}
+                  {(byDay.get(key(d)) ?? []).map(chip)}
                 </div>
               );
             })}

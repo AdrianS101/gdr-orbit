@@ -127,6 +127,10 @@ export async function publishHandler(ctx: JobContext) {
       db.prepare("UPDATE post_targets SET status = 'published', external_id = ?, permalink = ?, published_at = ?, error = NULL WHERE id = ?").run(r.externalId, r.permalink, now(), t.id);
     } catch (e) {
       const msg = e instanceof MetaError ? `${e.message} ${e.hint}` : (e as Error).message;
+      if (acc.network === 'instagram' && post.type === 'video' && /recusou o envio do vídeo/.test(msg)) {
+        db.prepare("UPDATE post_targets SET status = 'manual', error = ? WHERE id = ?").run('O Instagram não aceitou este vídeo pela API (nos testes, vídeos acima de ~55 s têm sido recusados para este app). Publique pelo app do Instagram: baixe o vídeo, copie o texto e depois cole aqui o link do Reels.', t.id);
+        continue;
+      }
       db.prepare("UPDATE post_targets SET status = 'failed', error = ? WHERE id = ?").run(msg, t.id);
       errors.push(`${acc.name}: ${msg}`);
     }
@@ -280,10 +284,10 @@ export async function socialRoutes(app: FastifyInstance) {
     const { brandId } = req.query as { brandId: string };
     const exports = (db.prepare('SELECT e.*, p.name AS project_name FROM exports e JOIN projects p ON p.id = e.project_id WHERE e.brand_id = ? ORDER BY e.created_at DESC').all(brandId) as any[])
       .filter((e) => fs.existsSync(exportPath(e.brand_id, e.file)))
-      .map((e) => ({ source: 'export', id: e.id, kind: 'video', name: e.project_name, projectId: e.project_id, settings: JSON.parse(e.settings), createdAt: e.created_at, url: `/api/exports/${e.id}/file` }));
+      .map((e) => ({ source: 'export', id: e.id, kind: 'video', name: e.project_name, projectId: e.project_id, settings: JSON.parse(e.settings), duration: JSON.parse(e.settings).duration ?? null, createdAt: e.created_at, url: `/api/exports/${e.id}/file`, download: `/api/exports/${e.id}/file?download=1` }));
     const assets = (db.prepare("SELECT * FROM assets WHERE brand_id = ? AND kind IN ('image','video') AND status = 'ready' ORDER BY created_at DESC").all(brandId) as any[]).map((a) => {
       const meta = JSON.parse(a.meta);
-      return { source: 'asset', id: a.id, kind: a.kind, name: a.name, settings: { width: meta.width, height: meta.height }, createdAt: a.created_at, url: a.kind === 'image' ? `/api/assets/${a.id}/media/original` : `/api/assets/${a.id}/media/proxy` };
+      return { source: 'asset', id: a.id, kind: a.kind, name: a.name, settings: { width: meta.width, height: meta.height }, duration: meta.duration ?? null, createdAt: a.created_at, url: a.kind === 'image' ? `/api/assets/${a.id}/media/original` : `/api/assets/${a.id}/media/proxy`, download: `/api/assets/${a.id}/media/original?download=1` };
     });
     return [...exports, ...assets];
   });

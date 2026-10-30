@@ -113,16 +113,16 @@ async function hostImage(pageId: string, token: string, file: string): Promise<s
 async function resumableVideo(igId: string, token: string, file: string, params: Record<string, string>, onRetry?: (msg: string) => void) {
   const body = fs.readFileSync(file);
   let last = '';
-  for (let attempt = 1; attempt <= 6; attempt++) {
+  for (let attempt = 1; attempt <= 4; attempt++) {
     const c = await call(`${G()}/${igId}/media`, { method: 'POST', body: new URLSearchParams({ ...params, upload_type: 'resumable', access_token: token }) });
     const up = await fetch(c.uri, { method: 'POST', headers: { Authorization: `OAuth ${token}`, offset: '0', file_size: String(body.length) }, body }).catch(() => null);
     if (up?.ok) return c.id as string;
     const j: any = up ? await up.json().catch(() => ({})) : {};
     last = `${up?.status ?? 'sem conexão'}${j.debug_info?.message ? `: ${j.debug_info.message}` : ''}`;
-    onRetry?.(`Instagram recusou o envio (${last}); tentando de novo (${attempt}/6)`);
+    onRetry?.(`Instagram recusou o envio (${last}); tentando de novo (${attempt}/4)`);
     await new Promise((r) => setTimeout(r, 4000 * attempt));
   }
-  throw new MetaError(`O Instagram recusou o envio do vídeo 6 vezes seguidas (${last}).`, 'É uma instabilidade do servidor da Meta. Tente novamente em alguns minutos.');
+  throw new MetaError(`O Instagram recusou o envio do vídeo 4 vezes seguidas (${last}).`, 'É uma instabilidade do servidor da Meta. Tente novamente em alguns minutos.');
 }
 
 async function waitContainer(id: string, token: string, onTick?: (msg: string) => void) {
