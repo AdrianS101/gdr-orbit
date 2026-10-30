@@ -4,7 +4,7 @@ import { db, now } from '../db.ts';
 import { runFfmpeg } from '../lib/ffmpeg.ts';
 import { assetPath, exportPath, jobTmp, rmrf, safeFileName } from '../lib/storage.ts';
 import { resolveFontFiles } from '../lib/fonts.ts';
-import { buildAss } from '../../../shared/ass.ts';
+import { buildAss, captionFonts } from '../../../shared/ass.ts';
 import { uid } from '../../../shared/timeline.ts';
 import type { Timeline } from '../../../shared/types.ts';
 import { buildRenderArgs, type RenderSettings } from './render-graph.ts';
@@ -32,8 +32,8 @@ export async function renderHandler(ctx: JobContext) {
     if ((timeline.captions.enabled && timeline.captions.cues.length) || timeline.texts?.length) {
       fs.writeFileSync(path.join(work, 'captions.ass'), buildAss(timeline), 'utf8');
       assFile = 'captions.ass';
-      const families = new Set([timeline.captions.style.font, ...(timeline.texts ?? []).map((t) => t.font)]);
-      const fonts = [...families].flatMap((fam) => [...resolveFontFiles(fam, fam === timeline.captions.style.font && timeline.captions.style.bold, project.brand_id), ...resolveFontFiles(fam, true, project.brand_id)]);
+      // Mesmas fontes que a prévia carrega (captionFonts), copiadas para a pasta do FFmpeg.
+      const fonts = captionFonts(timeline).flatMap((f) => [...resolveFontFiles(f.family, f.bold, project.brand_id), ...resolveFontFiles(f.family, true, project.brand_id)]);
       if (fonts.length) {
         fs.mkdirSync(path.join(work, 'fonts'), { recursive: true });
         for (const ft of fonts) fs.copyFileSync(ft.file, path.join(work, 'fonts', path.basename(ft.file)));

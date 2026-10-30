@@ -8,6 +8,7 @@ import { AppError, badRequest, notFound } from '../lib/errors.ts';
 import { assetPath } from '../lib/storage.ts';
 import { rowToAsset, rowToBrand } from '../lib/mappers.ts';
 import { DEFAULT_CAPTION_STYLE, defaultCaptionY, emptyTimeline, uid } from '../../../shared/timeline.ts';
+import { applyProCaptions } from '../../../shared/captions.ts';
 import { ANIMATED_CAPTION, hookRange, markKeywords, PODCAST_CAPTION, rhythmFromCuts, sanitizePicks, sentenceRange, splitSentences, VIRAL_CAPTION, type ReelPick, type RhythmProfile } from '../../../shared/studio.ts';
 import { enqueue, type JobContext } from '../jobs/queue.ts';
 import { exposureCorrection, measureExposure } from '../lib/exposure.ts';
@@ -169,7 +170,7 @@ ${lines.slice(i0, i1).join('\n')}${part}`,
 /** Monta um projeto por trecho (legenda, luz, ritmo, enquadramento) e, se pedido, já exporta. */
 export async function createCuts(assetId: string, body: unknown, onProgress?: (fraction: number, message: string) => void) {
   const a = assetRow(assetId);
-  const b = (body ?? {}) as { segments: { in: number; out: number; title: string; hook: string; hookIn?: number | null; hookOut?: number | null; score?: number; keywords?: string[]; why?: string; text?: string; structure?: unknown }[]; captions?: boolean; logo?: boolean; hookTitle?: boolean; removePauses?: boolean; viral?: boolean; autoExport?: boolean; style?: 'impacto' | 'podcast' | 'animada'; format?: '9:16' | '1:1' | '16:9'; highlightKeywords?: boolean; autoLight?: boolean; autoReframe?: boolean; reframe?: ReframeTarget; hook?: boolean; filter?: string; motion?: 'auto' | 'none'; denoise?: boolean };
+  const b = (body ?? {}) as { segments: { in: number; out: number; title: string; hook: string; hookIn?: number | null; hookOut?: number | null; score?: number; keywords?: string[]; why?: string; text?: string; structure?: unknown }[]; captions?: boolean; logo?: boolean; hookTitle?: boolean; removePauses?: boolean; viral?: boolean; autoExport?: boolean; style?: 'impacto' | 'podcast' | 'animada' | 'pro'; format?: '9:16' | '1:1' | '16:9'; highlightKeywords?: boolean; autoLight?: boolean; autoReframe?: boolean; reframe?: ReframeTarget; hook?: boolean; filter?: string; motion?: 'auto' | 'none'; denoise?: boolean };
   if (!b.segments?.length) throw badRequest('Escolha ao menos um corte.');
   const meta = JSON.parse(a.meta);
   const words = wordsOf(a.id) ?? [];
@@ -211,15 +212,15 @@ export async function createCuts(assetId: string, body: unknown, onProgress?: (f
     }
     const steps: EditAction[] = [];
     if (b.removePauses !== false && words.length) steps.push({ type: 'remove_pauses' });
-    if (b.captions !== false && words.length) steps.push(podcast ? { type: 'captions', highlightColor: '#FFFFFF', uppercase: false } : animada ? { type: 'captions', highlightColor: ANIMATED_CAPTION.highlightColor, uppercase: true } : { type: 'captions' });
+    if (b.captions !== false && words.length) steps.push(b.style === 'pro' ? { type: 'captions', preset: 'pro' } : podcast ? { type: 'captions', highlightColor: '#FFFFFF', uppercase: false } : animada ? { type: 'captions', highlightColor: ANIMATED_CAPTION.highlightColor, uppercase: true } : { type: 'captions' });
     if (b.logo !== false && brand.profile.logoAssetId && assets[brand.profile.logoAssetId]) steps.push({ type: 'logo' });
     if (b.hookTitle !== false && s.hook?.trim() && !podcast && !animada) steps.push({ type: 'text', text: s.hook.trim(), start: 0, duration: 3, kind: 'title', anim: 'pop' });
     // Personalização: filtro, movimento (ritmo de planos + zoom) e limpeza do áudio podem ser trocados ou desligados.
     const motion = b.motion !== 'none';
     if (b.viral) {
-      const preset = b.filter && b.filter !== 'auto' ? b.filter : podcast ? 'podcast' : animada ? null : 'cinema';
+      const preset = b.filter && b.filter !== 'auto' ? b.filter : podcast ? 'podcast' : animada || b.style === 'pro' ? null : 'cinema';
       if (preset && preset !== 'none') steps.push({ type: 'filter', preset: preset as any });
-      if (motion) steps.push({ type: 'rhythm', shotLength: podcast ? 6 : animada ? 3.2 : 2.6 });
+      if (motion) steps.push({ type: 'rhythm', shotLength: podcast || b.style === 'pro' ? 6 : animada ? 3.2 : 2.6 });
       if (b.denoise !== false) steps.push({ type: 'denoise', level: 'light' });
     }
     const warnings: string[] = [];
@@ -240,7 +241,10 @@ export async function createCuts(assetId: string, body: unknown, onProgress?: (f
     }
     // Palavras-chave sempre destacadas na legenda.
     if (!motion) tl.clips = tl.clips.map((c) => ({ ...c, zoom: undefined }));
-    if (b.highlightKeywords !== false && s.keywords?.length) tl.captions = { ...tl.captions, cues: markKeywords(tl.captions.cues, s.keywords) };
+    if (b.style === 'pro' && tl.captions.cues.length) {
+      const cues = b.highlightKeywords !== false && s.keywords?.length ? markKeywords(tl.captions.cues.map((q) => ({ ...q, words: q.words.map(({ k: _k, ...w }) => w) })), s.keywords) : tl.captions.cues;
+      tl = applyProCaptions({ ...tl, captions: { ...tl.captions, cues } }, { [a.id]: words }).timeline;
+    } else if (b.highlightKeywords !== false && s.keywords?.length) tl.captions = { ...tl.captions, cues: markKeywords(tl.captions.cues, s.keywords) };
     // Luz automática (mesma conta de cor na prévia e na exportação).
     const lt = lights[k];
     if (lt) {

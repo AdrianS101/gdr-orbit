@@ -174,7 +174,7 @@ export interface CaptionCue {
   breaks?: number[];
 }
 
-export type CaptionPreset = 'classic' | 'highlight' | 'pop' | 'karaoke' | 'box' | 'bounce';
+export type CaptionPreset = 'classic' | 'highlight' | 'pop' | 'karaoke' | 'box' | 'bounce' | 'pro';
 
 export interface CaptionStyle {
   preset: CaptionPreset;

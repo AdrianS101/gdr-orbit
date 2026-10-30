@@ -5,6 +5,7 @@
 
 import type { CaptionCue, CaptionStyle, CaptionWord, Timeline } from './types.ts';
 import { clipAt, layoutClips, uid, type PlacedClip } from './timeline.ts';
+import { pickEmphasis } from './pro-captions.ts';
 
 const SENTENCE_END = /[.!?…]$/;
 
@@ -276,4 +277,33 @@ export function fillMissingCues(tl: Timeline, transcripts: Record<string, Captio
   if (!added.length) return { timeline: tl, added: 0, words: 0 };
   const cues = [...tl.captions.cues, ...added].sort((a, b) => (a.assetId === b.assetId ? (a.words[0]?.s ?? 0) - (b.words[0]?.s ?? 0) : 0));
   return { timeline: { ...tl, captions: { ...tl.captions, cues } }, added: added.length, words: count };
+}
+
+/**
+ * Legenda profissional com 1 clique: cria as legendas (se ainda não houver), aplica o estilo "pro"
+ * e escolhe as palavras de ênfase (~1 a cada 7 s). Com `repick`, refaz a escolha das ênfases.
+ */
+export function applyProCaptions(tl: Timeline, transcripts: Record<string, CaptionWord[] | undefined>, repick = false): { timeline: Timeline; emphasis: number; created: boolean } {
+  let cur = tl;
+  let created = false;
+  if (!cur.captions.cues.length) {
+    const cues = Array.from(new Set(cur.clips.map((c) => c.assetId))).flatMap((id) => {
+      const words = transcripts[id];
+      return words ? buildCues(id, words, cur.captions.style, cur.clips.filter((c) => c.assetId === id).map((c) => ({ from: c.in, to: c.out }))) : [];
+    });
+    cur = { ...cur, captions: { ...cur.captions, cues } };
+    created = cues.length > 0;
+  }
+  cur = { ...cur, captions: { ...cur.captions, enabled: true, style: { ...cur.captions.style, preset: 'pro', font: 'Poppins', bold: true, uppercase: false, posY: 0.646 } } };
+  let cues = cur.captions.cues;
+  if (repick) cues = cues.map((q) => ({ ...q, words: q.words.map(({ k: _k, ...w }) => w) }));
+  if (repick || !cues.some((q) => q.words.some((w) => w.k))) {
+    const mapped = mapCuesToTimeline({ ...cur, captions: { ...cur.captions, cues } }).flatMap((c) => c.words.map((w) => ({ ...w, cueId: c.cueId }))).sort((a, b) => a.start - b.start);
+    const picks = pickEmphasis(mapped);
+    const mark = new Map<string, Set<number>>();
+    for (const i of picks) mark.set(mapped[i].cueId, (mark.get(mapped[i].cueId) ?? new Set()).add(mapped[i].index));
+    cues = cues.map((q) => (mark.has(q.id) ? { ...q, words: q.words.map((w, i) => (mark.get(q.id)!.has(i) ? { ...w, k: 1 as const } : w)) } : q));
+  }
+  const emphasis = cues.reduce((n, q) => n + q.words.filter((w) => w.k).length, 0);
+  return { timeline: { ...cur, captions: { ...cur.captions, cues } }, emphasis, created };
 }

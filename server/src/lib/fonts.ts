@@ -10,7 +10,7 @@ export interface FontEntry {
   family: string;
   style: string;
   file: string;
-  source: 'sistema' | 'marca';
+  source: 'sistema' | 'marca' | 'app';
   brandId?: string;
   assetId?: string;
 }
@@ -96,6 +96,20 @@ export function systemFonts(): FontEntry[] {
   return out;
 }
 
+let appCache: FontEntry[] | null = null;
+/** Fontes embutidas no GDR Digital (server/fonts), usadas pela legenda profissional. */
+export function appFonts(): FontEntry[] {
+  if (appCache) return appCache;
+  const dir = path.join(import.meta.dirname, '..', '..', 'fonts');
+  appCache = [];
+  for (const name of fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
+    if (!/\.(ttf|otf)$/i.test(name)) continue;
+    const n = readFontNames(fs.readFileSync(path.join(dir, name)));
+    if (n) appCache.push({ family: n.family, style: n.style, file: path.join(dir, name), source: 'app' });
+  }
+  return appCache;
+}
+
 export function brandFonts(brandId: string): FontEntry[] {
   const rows = db.prepare("SELECT id, brand_id, ext, meta FROM assets WHERE brand_id = ? AND kind = 'font'").all(brandId) as any[];
   return rows.map((r) => {
@@ -108,7 +122,7 @@ export function brandFonts(brandId: string): FontEntry[] {
 export const SUGGESTED_FAMILIES = ['Arial Black', 'Impact', 'Segoe UI Black', 'Segoe UI', 'Bahnschrift', 'Verdana', 'Arial', 'Montserrat', 'Poppins', 'Inter'];
 
 export function listFonts(brandId?: string) {
-  const all = [...(brandId ? brandFonts(brandId) : []), ...systemFonts()];
+  const all = [...(brandId ? brandFonts(brandId) : []), ...appFonts(), ...systemFonts()];
   const families = new Map<string, FontEntry[]>();
   for (const f of all) {
     const list = families.get(f.family) ?? [];

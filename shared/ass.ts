@@ -4,6 +4,15 @@
 
 import type { CaptionStyle, TextClip, Timeline } from './types.ts';
 import { mapCuesToTimeline, wrapLines, type DisplayCue } from './captions.ts';
+import { PRO_FONT_FAMILIES, proCaptionEvents, proStyles } from './pro-captions.ts';
+
+/** Fontes que a prévia (JASSUB) e a exportação (pasta fonts do FFmpeg) precisam carregar. */
+export function captionFonts(tl: Timeline): { family: string; bold: boolean }[] {
+  const st = tl.captions.style;
+  const list = st.preset === 'pro' ? [...PRO_FONT_FAMILIES] : [{ family: st.font, bold: st.bold }];
+  for (const t of tl.texts ?? []) if (!list.some((f) => f.family === t.font)) list.push({ family: t.font, bold: true });
+  return list;
+}
 
 function assColor(hex: string, opacity = 1): string {
   const h = hex.replace('#', '').padEnd(6, '0');
@@ -58,6 +67,7 @@ export function buildAss(tl: Timeline): string {
     'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
     `Style: Main,${st.font},${fontPx},${primary},${primary},${outlineCol},${back},${st.bold ? -1 : 0},0,0,0,100,100,0,0,${isBox ? 3 : 1},${outline},${shadow},5,0,0,0,1`,
     `Style: TxtLine,${st.font},${fontPx},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,${Math.round(fontPx * 0.08)},0,5,0,0,0,1`,
+    ...(st.preset === 'pro' ? proStyles(Math.min(W, H) / 1080) : []),
     `Style: TxtBox,${st.font},${fontPx},&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,3,${Math.round(fontPx * 0.25)},0,5,0,0,0,1`,
     '',
     '[Events]',
@@ -68,7 +78,11 @@ export function buildAss(tl: Timeline): string {
   if (tl.captions.enabled) {
     const x = Math.round(W / 2);
     const y = Math.round(st.posY * H);
-    for (const cue of mapCuesToTimeline(tl)) lines.push(...cueEvents(cue, st, x, y));
+    if (st.preset === 'pro') {
+      // Legenda profissional: as cartelas são montadas pelas palavras (não pelos blocos de legenda).
+      const words = mapCuesToTimeline(tl).flatMap((c) => c.words).sort((a, b) => a.start - b.start);
+      lines.push(...proCaptionEvents(words, st, W, H, assTime));
+    } else for (const cue of mapCuesToTimeline(tl)) lines.push(...cueEvents(cue, st, x, y));
   }
   for (const t of tl.texts ?? []) lines.push(textEvent(t, W, H));
   return header.concat(lines).join('\n') + '\n';
@@ -93,7 +107,8 @@ function textEvent(t: TextClip, W: number, H: number): string {
 }
 
 function cueEvents(cue: DisplayCue, st: CaptionStyle, x: number, y: number): string[] {
-  const words = cue.words.map((w) => ({ ...w, text: escapeText(st.uppercase ? w.text.toLocaleUpperCase('pt-BR') : w.text) }));
+  // * (destaque) e | (cartela nova) são marcações da legenda profissional: nos outros estilos não aparecem.
+  const words = cue.words.map((w) => ({ ...w, text: escapeText((st.uppercase ? w.text.toLocaleUpperCase('pt-BR') : w.text).replace(/^[*|]+/, '')) }));
   const layout = wrapLines(words, st.maxCharsPerLine, cue.breaks);
   const pos = `{\\an5\\pos(${x},${y})}`;
   const base = assColor(st.textColor);

@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Wand2, FileDown, FileUp, Trash2, Merge, ChevronLeft, ChevronRight, Save, Mic } from 'lucide-react';
+import { Wand2, FileDown, FileUp, Trash2, Merge, ChevronLeft, ChevronRight, Save, Mic, Sparkles } from 'lucide-react';
 import { useEditor } from './store.ts';
 import { generateCaptions, updateTimeline } from './actions.ts';
 import { api } from '../lib/api.ts';
 import { useApp, showError, onJob } from '../lib/store.ts';
 import { Field, Progress } from '../components/ui.tsx';
-import { cueText, exportSrt, importSrt, mapCuesToTimeline, mergeCues, setCueSpan, setCueText, fillMissingCues } from '../../../shared/captions.ts';
+import { cueText, exportSrt, importSrt, mapCuesToTimeline, mergeCues, setCueSpan, setCueText, fillMissingCues, applyProCaptions } from '../../../shared/captions.ts';
 import { fmtTime } from '../../../shared/timeline.ts';
 import type { CaptionPreset, CaptionStyle } from '../../../shared/types.ts';
 
 const PRESETS: { id: CaptionPreset; label: string; hint: string }[] = [
+  { id: 'pro', label: 'Profissional', hint: 'Poppins em 2 linhas + palavra de destaque em serifada itálica' },
   { id: 'highlight', label: 'Destaque', hint: 'Palavra falada na cor de destaque' },
   { id: 'pop', label: 'Pop', hint: 'Palavra falada cresce e muda de cor' },
   { id: 'karaoke', label: 'Karaokê', hint: 'Preenche conforme a fala' },
@@ -331,6 +332,16 @@ export function CaptionsPanel() {
     useApp.getState().toast({ kind: r.created ? 'success' : 'info', title: r.created ? `${r.created} legendas criadas` : 'Nenhuma fala encontrada para legendar', hint: r.missing.length ? `Sem transcrição: ${r.missing.join(', ')}` : 'Revise o texto na lista abaixo.' });
   };
 
+  // Legenda profissional com 1 clique: cria as legendas (se preciso), aplica o estilo e escolhe os destaques.
+  const pro = (repick = false) => {
+    if (!anyTranscript) return useApp.getState().toast({ kind: 'info', title: 'Transcreva o vídeo primeiro', hint: 'A legenda é feita a partir da fala, palavra por palavra (passo 1 acima).' });
+    const r = applyProCaptions(timeline, transcripts, repick);
+    if (!r.timeline.captions.cues.length) return useApp.getState().toast({ kind: 'info', title: 'Nenhuma fala encontrada para legendar' });
+    updateTimeline(() => r.timeline, repick ? 'Escolher destaques de novo' : 'Legenda profissional');
+    useApp.getState().toast({ kind: 'success', title: repick ? `${r.emphasis} destaque(s) escolhido(s)` : 'Legenda profissional aplicada', hint: `${r.emphasis} palavra(s) em destaque. Para destacar outra, escreva * antes dela no texto da legenda; | antes de uma palavra começa uma cartela nova.` });
+  };
+  const isPro = timeline.captions.style.preset === 'pro';
+
   const downloadSrt = () => {
     const blob = new Blob([exportSrt(timeline)], { type: 'application/x-subrip' });
     const a = document.createElement('a');
@@ -352,6 +363,16 @@ export function CaptionsPanel() {
       <section className="col" style={{ gap: 8 }}>
         <div className="label">1. Transcrição da fala</div>
         <TranscribeBox />
+      </section>
+      <section className="pro-cap">
+        <div className="col" style={{ gap: 2, minWidth: 0 }}>
+          <b className="row" style={{ gap: 6 }}><Sparkles size={15} /> Legenda profissional</b>
+          <span className="faint small">2 linhas em Poppins, palavra-chave em serifada itálica com brilho, entrada suave. Um clique e pronto.</span>
+        </div>
+        <div className="row wrap" style={{ gap: 6 }}>
+          <button className="btn primary sm" disabled={!anyTranscript} title={anyTranscript ? '' : 'Transcreva o vídeo primeiro'} onClick={() => pro()}><Sparkles size={14} /> {isPro ? 'Aplicar de novo' : 'Aplicar com 1 clique'}</button>
+          {isPro && <button className="btn sm" onClick={() => pro(true)}>Escolher destaques de novo</button>}
+        </div>
       </section>
       <section className="col" style={{ gap: 8 }}>
         <div className="label">2. Legendas no vídeo</div>

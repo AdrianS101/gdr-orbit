@@ -2,7 +2,7 @@
 // Usado pelo chat com IA (a IA só escolhe ações desta lista) e pelas ações rápidas (sem IA).
 import type { Asset, CaptionWord, DenoiseLevel, FormatPreset, VideoEffect, TextAnim, TextClip, TextStyleKind, Timeline, TransitionType } from './types.ts';
 import { clamp, defaultCaptionY, layoutClips, makeFormat, rippleDelete, splitAt, timelineDuration, uid } from './timeline.ts';
-import { buildCues } from './captions.ts';
+import { applyProCaptions, buildCues } from './captions.ts';
 import { colorFromPreset, COLOR_PRESETS, removePauses } from './effects.ts';
 import { DENOISE_LABEL, newLayer } from './keyframes.ts';
 import { applyRhythm } from './studio.ts';
@@ -11,7 +11,7 @@ export type EditAction =
   | { type: 'remove_pauses'; minGap?: number }
   | { type: 'cut'; start: number; end: number }
   | { type: 'keep_only'; start: number; end: number }
-  | { type: 'captions'; preset?: 'highlight' | 'pop' | 'karaoke' | 'classic' | 'box' | 'bounce'; highlightColor?: string; uppercase?: boolean; position?: 'top' | 'middle' | 'bottom' }
+  | { type: 'captions'; preset?: 'highlight' | 'pop' | 'karaoke' | 'classic' | 'box' | 'bounce' | 'pro'; highlightColor?: string; uppercase?: boolean; position?: 'top' | 'middle' | 'bottom' }
   | { type: 'logo'; position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' }
   | { type: 'text'; text: string; start: number; duration?: number; kind?: TextStyleKind; anim?: TextAnim }
   | { type: 'transitions'; transition: TransitionType; duration?: number }
@@ -109,6 +109,8 @@ export function applyAction(tl: Timeline, a: EditAction, ctx: ActionContext): Ac
         cues = used.flatMap((id) => (ctx.transcripts[id] ? buildCues(id, ctx.transcripts[id], style, tl.clips.filter((c) => c.assetId === id).map((c) => ({ from: c.in, to: c.out }))) : []));
         if (!cues.length) throw new Error('Não há transcrição para gerar legendas. Transcreva o vídeo na aba Legendas.');
       }
+      // Profissional: mesmo caminho do botão de 1 clique (estilo + palavras de destaque).
+      if (style.preset === 'pro') return { timeline: applyProCaptions({ ...tl, captions: { enabled: true, style, cues } }, ctx.transcripts).timeline, label };
       return { timeline: { ...tl, captions: { enabled: true, style, cues } }, label };
     }
     case 'logo': {
@@ -242,7 +244,7 @@ export const ACTION_CATALOG = `Ações disponíveis (use somente estas; tempos e
 - remove_pauses {minGap?: número ≥0.3, padrão 0.6} — remove silêncios entre falas sem cortar palavras.
 - cut {start, end} — remove um intervalo.
 - keep_only {start, end} — mantém só o intervalo.
-- captions {preset?: "highlight"|"pop"|"karaoke"|"classic"|"box"|"bounce" (bounce = animada: palavra cresce e alterna verde/amarelo), highlightColor?: "#RRGGBB", uppercase?: bool, position?: "top"|"middle"|"bottom"} — gera/estiliza legendas sincronizadas.
+- captions {preset?: "highlight"|"pop"|"karaoke"|"classic"|"box"|"bounce"|"pro" (bounce = animada: palavra cresce e alterna verde/amarelo; pro = profissional: 2 linhas Poppins + palavra-chave em serifada itálica com brilho, use para "legenda profissional/elegante/premium"), highlightColor?: "#RRGGBB", uppercase?: bool, position?: "top"|"middle"|"bottom"} — gera/estiliza legendas sincronizadas.
 - logo {position?: "top-right"|"top-left"|"bottom-right"|"bottom-left"} — aplica o logo da marca.
 - text {text, start, duration?, kind?: "title"|"lower"|"cta", anim?: "fade"|"pop"|"slide"} — título, lower third ou chamada.
 - transitions {transition: "fade"|"flash"|"zoom"|"dissolve"|"wipe"|"wiperight"|"wipeup"|"wipedown"|"slide"|"slideright"|"slideup"|"slidedown"|"circle"|"zoomin"|"glitch", duration?: 0.2-2} — transição em todos os cortes (dissolve/wipe/slide sobrepõem os trechos e encurtam o vídeo pela duração).

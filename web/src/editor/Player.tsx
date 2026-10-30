@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import JASSUB from 'jassub';
 import { useEditor } from './store.ts';
 import { media } from '../lib/api.ts';
-import { buildAss } from '../../../shared/ass.ts';
+import { buildAss, captionFonts } from '../../../shared/ass.ts';
 import { barHeight, clipFx, colorSvg, crossAt, fadeAt, glitchAt, shakeAt, isNeutral, musicGainAt, speechIntervals, zoomAnchor, zoomAt } from '../../../shared/effects.ts';
 import { clipAt, layoutClips, overlapOf, sourceTimeAt, timelineDuration, SAFE_AREAS_VERTICAL, type PlacedClip } from '../../../shared/timeline.ts';
 import { audioClipGain, layerDuration, overlayBase, setAt, stackedLayers, transformAt } from '../../../shared/keyframes.ts';
@@ -286,7 +286,8 @@ export function Player({ showSafe }: { showSafe: boolean }) {
   const jassub = useRef<JASSUB | null>(null);
   const ass = useMemo(() => buildAss(timeline), [timeline]);
   const font = timeline.captions.style.font;
-  const textFonts = Array.from(new Set((timeline.texts ?? []).map((t) => t.font))).sort().join('|');
+  // Outras fontes do quadro (títulos e, na legenda profissional, Poppins + Playfair): mesma lista da exportação.
+  const textFonts = captionFonts(timeline).filter((f) => f.family !== font).map((f) => `${f.family}:${f.bold ? 1 : 0}`).sort().join('|');
   const bold = timeline.captions.style.bold;
   useEffect(() => {
     const host = subRef.current;
@@ -302,7 +303,10 @@ export function Player({ showSafe }: { showSafe: boolean }) {
     try {
       const fontUrl = `/api/fonts/file?family=${encodeURIComponent(font)}&bold=${bold ? 1 : 0}&brandId=${project.brandId}`;
       const extra: Record<string, string> = {};
-      for (const fam of textFonts.split('|').filter((x) => x && x !== font)) extra[fam.toLowerCase()] = `/api/fonts/file?family=${encodeURIComponent(fam)}&bold=1&brandId=${project.brandId}`;
+      for (const item of textFonts.split('|').filter(Boolean)) {
+        const [fam, b] = item.split(':');
+        extra[fam.toLowerCase()] = `/api/fonts/file?family=${encodeURIComponent(fam)}&bold=${b}&brandId=${project.brandId}`;
+      }
       inst = new JASSUB({ canvas, subContent: ass, availableFonts: { [font.toLowerCase()]: fontUrl, ...extra }, fonts: [fontUrl], defaultFont: font.toLowerCase(), queryFonts: false });
       jassub.current = inst;
       inst.ready.then(() => inst!.manualRender({ mediaTime: useEditor.getState().time, width: W, height: H, expectedDisplayTime: performance.now() }, true)).catch((e) => setCaptionError(String(e?.message ?? e)));
