@@ -5,7 +5,7 @@ import { generateCaptions, updateTimeline } from './actions.ts';
 import { api } from '../lib/api.ts';
 import { useApp, showError, onJob } from '../lib/store.ts';
 import { Field, Progress } from '../components/ui.tsx';
-import { cueText, exportSrt, importSrt, mapCuesToTimeline, mergeCues, setCueSpan, setCueText } from '../../../shared/captions.ts';
+import { cueText, exportSrt, importSrt, mapCuesToTimeline, mergeCues, setCueSpan, setCueText, fillMissingCues } from '../../../shared/captions.ts';
 import { fmtTime } from '../../../shared/timeline.ts';
 import type { CaptionPreset, CaptionStyle } from '../../../shared/types.ts';
 
@@ -316,6 +316,14 @@ export function CaptionsPanel() {
   const fileRef = useRef<HTMLInputElement>(null);
   const hasCues = timeline.captions.cues.length > 0;
   const anyTranscript = timeline.clips.some((c) => transcripts[c.assetId]);
+  // Falas que estão na timeline sem legenda (ex.: trecho estendido depois de gerar as legendas).
+  const gaps = hasCues ? fillMissingCues(timeline, transcripts) : null;
+  const fillGaps = () => {
+    const r = fillMissingCues(timeline, transcripts);
+    if (!r.added) return;
+    updateTimeline(() => r.timeline, 'Completar legendas');
+    useApp.getState().toast({ kind: 'success', title: `${r.added} legenda(s) criada(s) nas partes que estavam sem`, hint: 'As legendas e correções que já existiam não mudaram.' });
+  };
 
   const generate = () => {
     if (hasCues && !confirm('Gerar novamente substitui as legendas atuais (inclusive correções). Você pode desfazer com Ctrl+Z. Continuar?')) return;
@@ -351,6 +359,11 @@ export function CaptionsPanel() {
           <button className="btn primary sm" disabled={!anyTranscript} onClick={generate} title={anyTranscript ? '' : 'Transcreva o vídeo primeiro'}>
             <Wand2 size={14} /> {hasCues ? 'Gerar novamente' : 'Gerar legendas'}
           </button>
+          {!!gaps?.words && (
+            <button className="btn sm" onClick={fillGaps} title="Cria legenda só para as falas sem legenda, sem mexer nas que você já corrigiu">
+              <Wand2 size={14} /> Completar o que falta ({gaps.words} palavra{gaps.words > 1 ? 's' : ''})
+            </button>
+          )}
           <label className="row small" style={{ marginLeft: 'auto' }}>
             <input type="checkbox" checked={timeline.captions.enabled} onChange={(e) => updateTimeline((tl) => ({ ...tl, captions: { ...tl.captions, enabled: e.target.checked } }), e.target.checked ? 'Mostrar legendas' : 'Ocultar legendas')} /> Mostrar
           </label>

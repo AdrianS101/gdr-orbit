@@ -254,3 +254,26 @@ export function importSrt(tl: Timeline, srt: string): { cues: CaptionCue[]; skip
   }
   return { cues, skipped };
 }
+
+/**
+ * Cria legendas só para as falas que estão na timeline e ainda não têm legenda (ex.: depois de estender um trecho),
+ * sem mexer nas legendas existentes nem nas correções feitas.
+ */
+export function fillMissingCues(tl: Timeline, transcripts: Record<string, CaptionWord[] | undefined>): { timeline: Timeline; added: number; words: number } {
+  const added: CaptionCue[] = [];
+  let count = 0;
+  for (const id of Array.from(new Set(tl.clips.map((c) => c.assetId)))) {
+    const words = transcripts[id];
+    if (!words?.length) continue;
+    const ranges = tl.clips.filter((c) => c.assetId === id).map((c) => ({ from: c.in, to: c.out }));
+    const spans = tl.captions.cues.filter((q) => q.assetId === id && q.words.length).map((q) => [q.words[0].s, q.words[q.words.length - 1].e]);
+    const mid = (w: CaptionWord) => (w.s + w.e) / 2;
+    const missing = words.filter((w) => ranges.some((r) => mid(w) >= r.from && mid(w) <= r.to) && !spans.some(([a, b]) => mid(w) >= a - 0.01 && mid(w) <= b + 0.01));
+    const cues = buildCues(id, missing, tl.captions.style);
+    count += cues.reduce((n, q) => n + q.words.length, 0);
+    added.push(...cues);
+  }
+  if (!added.length) return { timeline: tl, added: 0, words: 0 };
+  const cues = [...tl.captions.cues, ...added].sort((a, b) => (a.assetId === b.assetId ? (a.words[0]?.s ?? 0) - (b.words[0]?.s ?? 0) : 0));
+  return { timeline: { ...tl, captions: { ...tl.captions, cues } }, added: added.length, words: count };
+}

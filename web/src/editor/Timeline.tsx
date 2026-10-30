@@ -4,7 +4,7 @@ import { layerDuration } from '../../../shared/keyframes.ts';
 import { useEditor } from './store.ts';
 import { media } from '../lib/api.ts';
 import { clipDuration, fmtTime, layoutClips, timelineDuration, trimClip, moveClip, MIN_CLIP } from '../../../shared/timeline.ts';
-import { mapCuesToTimeline } from '../../../shared/captions.ts';
+import { mapCuesToTimeline, fillMissingCues } from '../../../shared/captions.ts';
 import type { Asset, AudioClip, LayerClip, Timeline, VideoClip } from '../../../shared/types.ts';
 import { splitAtPlayhead, deleteSelection, duplicateSelection } from './actions.ts';
 
@@ -158,7 +158,14 @@ export function TimelinePanel() {
       if (g.moved && dropIndex !== null) st.commit(moveClip(g.before, g.id, dropIndex), 'Reordenar trecho');
       else if (!g.moved) st.setTime(layoutClips(st.timeline!.clips).find((p) => p.clip.id === g.id)?.start ?? st.time);
       setDropIndex(null);
-    } else st.endGesture(g.before, 'Aparar trecho');
+    } else {
+      // Estendeu o trecho e o vídeo já tem legendas: a parte nova ganha legenda no mesmo passo de desfazer.
+      if (st.timeline && st.timeline.captions.cues.length) {
+        const r = fillMissingCues(st.timeline, st.transcripts);
+        if (r.added) st.preview(r.timeline);
+      }
+      st.endGesture(g.before, 'Aparar trecho');
+    }
   };
 
   // ---- elementos (logo/imagens) ----
