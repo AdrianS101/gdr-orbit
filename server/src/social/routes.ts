@@ -391,7 +391,11 @@ export async function socialRoutes(app: FastifyInstance) {
   app.post('/api/posts/:id/targets/:tid/manual', async (req) => {
     const { id, tid } = req.params as any;
     const { permalink } = (req.body ?? {}) as { permalink?: string };
-    if (!permalink || !/^https:\/\/(www\.|vm\.)?tiktok\.com\//.test(permalink)) throw badRequest('Cole o link do vídeo publicado no TikTok.', 'Ex.: https://www.tiktok.com/@perfil/video/123…');
+    // O link precisa ser da rede do destino (TikTok, ou Instagram quando o Reels foi publicado pelo app).
+    const t = db.prepare('SELECT network FROM post_targets WHERE id = ? AND post_id = ?').get(tid, id) as any;
+    if (!t) throw notFound('Destino');
+    const ok = t.network === 'instagram' ? /^https:\/\/(www\.)?instagram\.com\/(reel|reels|p)\//.test(permalink ?? '') : /^https:\/\/(www\.|vm\.)?tiktok\.com\//.test(permalink ?? '');
+    if (!permalink || !ok) throw t.network === 'instagram' ? badRequest('Cole o link do Reels publicado no Instagram.', 'No app: ⋯ no Reels → Copiar link. Ex.: https://www.instagram.com/reel/ABC123/') : badRequest('Cole o link do vídeo publicado no TikTok.', 'Ex.: https://www.tiktok.com/@perfil/video/123…');
     db.prepare("UPDATE post_targets SET status = 'published', permalink = ?, published_at = ?, error = NULL WHERE id = ? AND post_id = ?").run(permalink, now(), tid, id);
     const all = db.prepare('SELECT status FROM post_targets WHERE post_id = ?').all(id) as any[];
     if (all.every((x) => x.status === 'published')) db.prepare("UPDATE posts SET status = 'published', updated_at = ? WHERE id = ?").run(now(), id);
