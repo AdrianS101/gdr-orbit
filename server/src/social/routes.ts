@@ -14,18 +14,20 @@ import { readSecrets, setSecret } from '../ai/providers.ts';
 import { enqueue, type JobContext } from '../jobs/queue.ts';
 import { uid } from '../../../shared/timeline.ts';
 import { metaFetch, recheckBlock } from './meta-guard.ts';
+import { accountAvatarFile, accountAvatarUrl } from './avatars.ts';
+import { sendFile } from '../lib/http.ts';
 import { exchangeAndList, graphVersion, metaApp, MetaError, oauthUrl, publishFacebook, publishInstagram, verifyAccount, type MetaCandidate, type PublishFile } from './meta.ts';
 
 const EDITABLE = ['draft', 'review', 'approved', 'failed'];
 const pending = new Map<string, { brandId: string; at: number; candidates?: MetaCandidate[]; userToken?: string; expiresIn?: number | null; error?: string }>();
 
 function rowToAccount(r: any) {
-  return { id: r.id, brandId: r.brand_id, network: r.network, externalId: r.external_id, name: r.name, username: r.username, avatar: r.avatar, status: r.status, verifiedAt: r.verified_at, error: r.error, assisted: r.network === 'tiktok' };
+  return { id: r.id, brandId: r.brand_id, network: r.network, externalId: r.external_id, name: r.name, username: r.username, avatar: accountAvatarUrl(r.id, r.avatar), status: r.status, verifiedAt: r.verified_at, error: r.error, assisted: r.network === 'tiktok' };
 }
 
 function rowToPost(r: any) {
   const targets = (db.prepare('SELECT t.*, a.name AS account_name, a.username, a.avatar FROM post_targets t LEFT JOIN social_accounts a ON a.id = t.account_id WHERE t.post_id = ?').all(r.id) as any[]).map((t) => ({
-    id: t.id, accountId: t.account_id, network: t.network, status: t.status, permalink: t.permalink, error: t.error, publishedAt: t.published_at, accountName: t.account_name, username: t.username, avatar: t.avatar,
+    id: t.id, accountId: t.account_id, network: t.network, status: t.status, permalink: t.permalink, error: t.error, publishedAt: t.published_at, accountName: t.account_name, username: t.username, avatar: accountAvatarUrl(t.account_id, t.avatar),
   }));
   return { id: r.id, brandId: r.brand_id, projectId: r.project_id, type: r.type, media: JSON.parse(r.media), caption: r.caption, captions: JSON.parse(r.captions), status: r.status, scheduledAt: r.scheduled_at, timezone: r.timezone, cover: r.cover ? JSON.parse(r.cover) : null, createdAt: r.created_at, updatedAt: r.updated_at, targets };
 }
@@ -172,6 +174,13 @@ export async function socialRoutes(app: FastifyInstance) {
   });
 
   // ---- contas ----
+  // Foto do perfil guardada localmente (os links da Meta expiram em poucos dias).
+  app.get('/api/social/accounts/:id/avatar', async (req, reply) => {
+    const file = await accountAvatarFile((req.params as any).id);
+    if (!file) throw new AppError(404, 'Foto do perfil indisponível.', 'Reconecte o perfil em Marcas → Perfis sociais se a foto não voltar.');
+    return sendFile(req, reply, file, { cache: true });
+  });
+
   app.get('/api/social/accounts', async (req) => {
     const { brandId } = req.query as { brandId?: string };
     return (brandId ? db.prepare("SELECT * FROM social_accounts WHERE brand_id = ? AND status != 'manual' ORDER BY network, name").all(brandId) : db.prepare("SELECT * FROM social_accounts WHERE status != 'manual' ORDER BY network, name").all()).map(rowToAccount);

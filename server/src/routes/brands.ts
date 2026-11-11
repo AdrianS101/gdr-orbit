@@ -4,6 +4,7 @@ import { badRequest, notFound, AppError } from '../lib/errors.ts';
 import { EMPTY_PROFILE, rowToBrand } from '../lib/mappers.ts';
 import { uid } from '../../../shared/timeline.ts';
 import type { BrandProfile } from '../../../shared/types.ts';
+import { accountAvatarUrl } from '../social/avatars.ts';
 
 function slugify(s: string) {
   return (
@@ -61,10 +62,10 @@ export async function brandRoutes(app: FastifyInstance) {
     return rows.map((r) => {
       const b = rowToBrand(r);
       // Foto da marca: perfil conectado (Instagram primeiro) ou o logo.
-      const acc = db.prepare("SELECT avatar, network, username, name FROM social_accounts WHERE brand_id = ? AND avatar IS NOT NULL AND status != 'manual' ORDER BY network = 'instagram' DESC LIMIT 1").get(b.id) as any;
+      const acc = db.prepare("SELECT id, avatar, network, username, name FROM social_accounts WHERE brand_id = ? AND avatar IS NOT NULL AND status != 'manual' ORDER BY network = 'instagram' DESC LIMIT 1").get(b.id) as any;
       const nets = (db.prepare("SELECT DISTINCT network FROM social_accounts WHERE brand_id = ? AND status != 'manual'").all(b.id) as any[]).map((x) => x.network);
       const counts = db.prepare('SELECT (SELECT COUNT(*) FROM projects WHERE brand_id = ?) AS projects, (SELECT COUNT(*) FROM assets WHERE brand_id = ?) AS assets').get(b.id, b.id) as any;
-      return { ...b, missing: missingFields(b.profile), avatar: acc?.avatar ?? (b.profile.logoAssetId ? `/api/assets/${b.profile.logoAssetId}/media/original` : null), handle: acc?.username ?? null, networks: nets, counts };
+      return { ...b, missing: missingFields(b.profile), avatar: (acc ? accountAvatarUrl(acc.id, acc.avatar) : null) ?? (b.profile.logoAssetId ? `/api/assets/${b.profile.logoAssetId}/media/original` : null), handle: acc?.username ?? null, networks: nets, counts };
     });
   });
 

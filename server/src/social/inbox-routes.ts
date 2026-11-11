@@ -5,13 +5,15 @@ import { uid } from '../../../shared/timeline.ts';
 import { commentTriggers, DEFAULT_GATE, deliveryMessage, describeOut, dmText, followUpReply, gateMessage, MAX_GATE_CHECKS, openingMessage, pickCommentReply, usesButtonFlow, EMPTY_AUTOMATION, type AutomationConfig } from '../../../shared/automation.ts';
 import { pollInbox, replyComment, sendDm, suggestReply } from './inbox.ts';
 import { MetaError } from './meta.ts';
+import { contactAvatarFile, contactAvatarUrl } from './avatars.ts';
+import { sendFile } from '../lib/http.ts';
 import { AiError } from '../ai/providers.ts';
 
 const asApp = (e: unknown) => (e instanceof MetaError ? new AppError(400, e.message, e.hint) : e instanceof AiError ? new AppError(503, e.message, e.hint) : e);
 
 function rowToContact(r: any) {
   const last = db.prepare('SELECT text, kind, direction, created_at FROM messages WHERE contact_id = ? ORDER BY created_at DESC LIMIT 1').get(r.id) as any;
-  return { id: r.id, brandId: r.brand_id, accountId: r.account_id, network: r.network, username: r.username, name: r.name, avatar: r.avatar, tags: JSON.parse(r.tags).filter((t: string) => !t.startsWith('aguarda:')), status: r.status, paused: !!r.paused, unread: r.unread, lastMessageAt: r.last_message_at, lastInboundAt: r.last_inbound_at, last };
+  return { id: r.id, brandId: r.brand_id, accountId: r.account_id, network: r.network, username: r.username, name: r.name, avatar: contactAvatarUrl(r.id, r.avatar), tags: JSON.parse(r.tags).filter((t: string) => !t.startsWith('aguarda:')), status: r.status, paused: !!r.paused, unread: r.unread, lastMessageAt: r.last_message_at, lastInboundAt: r.last_inbound_at, last };
 }
 
 function cleanConfig(c: any): AutomationConfig {
@@ -30,6 +32,12 @@ function cleanConfig(c: any): AutomationConfig {
 
 export async function inboxRoutes(app: FastifyInstance) {
   // ---- caixa de entrada ----
+  app.get('/api/inbox/contacts/:id/avatar', async (req, reply) => {
+    const file = await contactAvatarFile((req.params as any).id);
+    if (!file) throw new AppError(404, 'Foto do contato indisponível.', 'A Meta não entregou a foto deste perfil.');
+    return sendFile(req, reply, file, { cache: true });
+  });
+
   app.get('/api/inbox/contacts', async (req) => {
     const q = req.query as { brandId?: string; status?: string; network?: string; q?: string; kind?: string };
     const where = ['1=1'];

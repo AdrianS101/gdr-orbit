@@ -233,11 +233,18 @@ export function Shell({ children }: { children: ReactNode }) {
 }
 
 /** Foto da marca (perfil conectado ou logo); sem foto, iniciais na cor da marca. */
+/** Foto com troca para as iniciais se a imagem não carregar. */
+export function AvatarImg({ src, className, style, fallback }: { src: string; className?: string; style?: React.CSSProperties; fallback: React.ReactNode }) {
+  const [bad, setBad] = useState(false);
+  useEffect(() => setBad(false), [src]);
+  return bad ? <>{fallback}</> : <img className={className} src={src} alt="" style={style} loading="lazy" onError={() => setBad(true)} />;
+}
+
 export function BrandAvatar({ b, size = 24 }: { b: { name: string; avatar?: string | null; profile: { colors: { hex: string }[] } } | null | undefined; size?: number }) {
   const st = { width: size, height: size, minWidth: size };
   if (!b) return <span className="brand-av all" style={st}><Layers size={size * 0.55} /></span>;
-  if (b.avatar) return <img className="brand-av" src={b.avatar} alt="" style={st} loading="lazy" />;
-  const ini = b.name.split(/s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  if (b.avatar) return <AvatarImg className="brand-av" src={b.avatar} style={st} fallback={<BrandAvatar b={{ ...b, avatar: null }} size={size} />} />;
+  const ini = b.name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
   return <span className="brand-av" style={{ ...st, background: b.profile.colors[0]?.hex ?? 'var(--surface-3)', fontSize: size * 0.4 }}>{ini}</span>;
 }
 

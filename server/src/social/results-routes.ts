@@ -5,6 +5,7 @@ import { AppError, badRequest } from '../lib/errors.ts';
 import { enqueue } from '../jobs/queue.ts';
 import { accountTotals, adAccounts, adsReport } from './insights.ts';
 import { MetaError } from './meta.ts';
+import { accountAvatarUrl } from './avatars.ts';
 import { parseMetricsCsv } from '../../../shared/metrics-import.ts';
 import { uid } from '../../../shared/timeline.ts';
 import crypto from 'node:crypto';
@@ -37,9 +38,9 @@ export async function resultsRoutes(app: FastifyInstance) {
         const cur = await accountTotals(a, Math.floor(since / 1000), Math.floor(until / 1000));
         const prev = await accountTotals(a, Math.floor((since - len) / 1000), Math.floor(since / 1000));
         const allNull = Object.entries(cur.totals).every(([k, v]) => k === 'followers_now' || v === null);
-        out.push({ id: a.id, network: a.network, name: a.username ?? a.name, avatar: a.avatar, totals: cur.totals, prev: prev.totals, notes: cur.notes, fetchedAt: cur.fetchedAt, error: null, warning: a.error ?? (allNull ? 'A Meta não entregou as métricas da conta para esta conexão. Reconecte o perfil em Marcas → Perfis sociais aceitando as permissões de insights.' : null) });
+        out.push({ id: a.id, network: a.network, name: a.username ?? a.name, avatar: accountAvatarUrl(a.id, a.avatar), totals: cur.totals, prev: prev.totals, notes: cur.notes, fetchedAt: cur.fetchedAt, error: null, warning: a.error ?? (allNull ? 'A Meta não entregou as métricas da conta para esta conexão. Reconecte o perfil em Marcas → Perfis sociais aceitando as permissões de insights.' : null) });
       } catch (e) {
-        out.push({ id: a.id, network: a.network, name: a.username ?? a.name, avatar: a.avatar, totals: {}, prev: {}, notes: [], fetchedAt: null, error: e instanceof MetaError ? `${e.message} ${e.hint}` : (e as Error).message });
+        out.push({ id: a.id, network: a.network, name: a.username ?? a.name, avatar: accountAvatarUrl(a.id, a.avatar), totals: {}, prev: {}, notes: [], fetchedAt: null, error: e instanceof MetaError ? `${e.message} ${e.hint}` : (e as Error).message });
       }
     }
     // Contas com métricas importadas manualmente (ex.: TikTok) também entram no ranking, identificadas.

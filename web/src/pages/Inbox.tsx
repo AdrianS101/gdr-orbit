@@ -1,6 +1,7 @@
 // Caixa de entrada: DMs e comentários do Instagram/Facebook por contato, com respostas sugeridas pela IA.
 import { useEffect, useRef, useState } from 'react';
 import { Inbox as InboxIcon, RefreshCw, Send, Sparkles, Pause, Play, Check, MessageCircle, AtSign } from 'lucide-react';
+import { AvatarImg } from '../components/Shell.tsx';
 import { api } from '../lib/api.ts';
 import { useApp, showError } from '../lib/store.ts';
 import { Empty, Spinner } from '../components/ui.tsx';
@@ -252,10 +253,10 @@ export function InboxPage() {
 /** Foto do perfil (API do Instagram) ou iniciais com gradiente; anel no estilo do Instagram quando há mensagem nova. */
 function ContactAvatar({ c }: { c: { name?: string | null; username?: string | null; avatar?: string | null; unread: number; network: string } }) {
   const label = (c.name || c.username || '?').replace(/^@/, '');
-  const ini = label.split(/[s._]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  const ini = label.split(/[\s._]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
   return (
     <span className={`ct-av ${c.unread > 0 ? 'ring' : ''}`}>
-      {c.avatar ? <img src={c.avatar} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span className="ct-ini">{ini}</span>}
+      {c.avatar ? <AvatarImg src={c.avatar} fallback={<span className="ct-ini">{ini}</span>} /> : <span className="ct-ini">{ini}</span>}
     </span>
   );
 }
