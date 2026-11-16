@@ -189,6 +189,6 @@ export async function inboxRoutes(app: FastifyInstance) {
 
   app.get('/api/automations/media', async (req) => {
     const { accountId } = req.query as { accountId: string };
-    return (db.prepare('SELECT external_id, caption, thumb, posted_at, type FROM media_items WHERE account_id = ? ORDER BY posted_at DESC LIMIT 40').all(accountId) as any[]).map((m) => ({ id: m.external_id, caption: m.caption, thumb: m.thumb, postedAt: m.posted_at, type: m.type }));
+    return (db.prepare('SELECT id AS mid, external_id, caption, thumb, posted_at, type FROM media_items WHERE account_id = ? ORDER BY posted_at DESC LIMIT 40').all(accountId) as any[]).map((m) => ({ id: m.external_id, caption: m.caption, thumb: m.thumb ? `/api/media/${m.mid}/thumb` : null, postedAt: m.posted_at, type: m.type }));
   });
 }

@@ -1,9 +1,18 @@
 // Gráfico de área leve (SVG puro, sem biblioteca): curva suave, grade pontilhada e valor ao passar o mouse.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 export function AreaChart({ points, height = 220, label, format = (v) => v.toLocaleString('pt-BR') }: { points: { x: string; y: number }[]; height?: number; label: string; format?: (v: number) => string }) {
   const [hover, setHover] = useState<number | null>(null);
-  const W = 800;
+  // Desenha na largura real do cartão (antes era 800 fixo e o SVG esticava letras e linhas).
+  const box = useRef<HTMLDivElement>(null);
+  const [W, setW] = useState(800);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setW(Math.max(280, Math.round(e.contentRect.width))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const H = height;
   const pad = { l: 44, r: 12, t: 14, b: 26 };
   const max = Math.max(1, ...points.map((p) => p.y));
@@ -23,13 +32,13 @@ export function AreaChart({ points, height = 220, label, format = (v) => v.toLoc
       d += ` C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${p2[0]},${p2[1]}`;
     }
     return d;
-  }, [points, top]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [points, top, W]); // eslint-disable-line react-hooks/exhaustive-deps
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((k) => top * k);
-  const every = Math.ceil(points.length / 8);
+  const every = Math.ceil(points.length / Math.max(3, Math.floor(W / 90)));
   const h = hover !== null ? points[hover] : null;
   return (
-    <div className="area-chart" role="img" aria-label={label}>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" onMouseLeave={() => setHover(null)}
+    <div ref={box} className="area-chart" role="img" aria-label={label}>
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} onMouseLeave={() => setHover(null)}
         onMouseMove={(e) => {
           const r = e.currentTarget.getBoundingClientRect();
           const x = ((e.clientX - r.left) / r.width) * W;

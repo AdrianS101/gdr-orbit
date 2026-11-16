@@ -5,7 +5,8 @@ import { AppError, badRequest } from '../lib/errors.ts';
 import { enqueue } from '../jobs/queue.ts';
 import { accountTotals, adAccounts, adsReport } from './insights.ts';
 import { MetaError } from './meta.ts';
-import { accountAvatarUrl } from './avatars.ts';
+import { accountAvatarUrl, mediaThumbFile, mediaThumbUrl } from './avatars.ts';
+import { sendFile } from '../lib/http.ts';
 import { parseMetricsCsv } from '../../../shared/metrics-import.ts';
 import { uid } from '../../../shared/timeline.ts';
 import crypto from 'node:crypto';
@@ -25,6 +26,12 @@ export async function resultsRoutes(app: FastifyInstance) {
   app.post('/api/results/sync', async (req) => {
     const { brandId, days } = (req.body ?? {}) as { brandId: string; days?: number };
     return { jobId: enqueue({ type: 'metrics', title: 'Atualizando métricas', brandId, payload: { brandId, days: Math.min(365, Number(days) || 90) } }) };
+  });
+
+  app.get('/api/media/:id/thumb', async (req, reply) => {
+    const file = await mediaThumbFile((req.params as any).id);
+    if (!file) throw new AppError(404, 'Capa do post indisponível.', 'Sincronize os resultados de novo; se o post foi apagado, a Meta não entrega mais a capa.');
+    return sendFile(req, reply, file, { cache: true });
   });
 
   app.get('/api/results', async (req) => {
@@ -48,7 +55,7 @@ export async function resultsRoutes(app: FastifyInstance) {
     const ids = Array.from(new Set([...accounts.map((a) => a.id), ...manual.map((m) => m.account_id)]));
     const media = ids.length
       ? (db.prepare(`SELECT m.*, a.username, a.name AS account_name FROM media_items m JOIN social_accounts a ON a.id = m.account_id WHERE m.account_id IN (${ids.map(() => '?').join(',')}) AND m.posted_at >= ? AND m.posted_at < ? ORDER BY m.posted_at DESC`).all(...ids, new Date(since).toISOString(), new Date(until).toISOString()) as any[]).map((m) => ({
-          id: m.id, externalId: m.external_id, network: m.network, type: m.type, caption: m.caption, permalink: m.permalink, thumb: m.thumb, postedAt: m.posted_at, metrics: JSON.parse(m.metrics), updatedAt: m.updated_at, account: m.username ?? m.account_name, source: m.source, importBatch: m.import_batch,
+          id: m.id, externalId: m.external_id, network: m.network, type: m.type, caption: m.caption, permalink: m.permalink, thumb: mediaThumbUrl(m.id, m.thumb), postedAt: m.posted_at, metrics: JSON.parse(m.metrics), updatedAt: m.updated_at, account: m.username ?? m.account_name, source: m.source, importBatch: m.import_batch,
         }))
       : [];
     // Tráfego pago (se a marca tiver conta de anúncio escolhida)

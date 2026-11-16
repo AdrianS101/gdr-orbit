@@ -161,6 +161,8 @@ const migrations: string[] = [
     title TEXT NOT NULL, html TEXT NOT NULL, model TEXT, created_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS reports_brand ON reports(brand_id, created_at);`,
+  // Busca de foto refeita (perfis profissionais via business_discovery): reavalia quem ficou sem foto.
+  `UPDATE contacts SET profile_checked_at = NULL WHERE avatar IS NULL;`,
 ];
 
 db.exec('CREATE TABLE IF NOT EXISTS _migrations (n INTEGER PRIMARY KEY)');

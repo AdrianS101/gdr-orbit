@@ -255,7 +255,7 @@ function ContactAvatar({ c }: { c: { name?: string | null; username?: string | n
   const label = (c.name || c.username || '?').replace(/^@/, '');
   const ini = label.split(/[\s._]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
   return (
-    <span className={`ct-av ${c.unread > 0 ? 'ring' : ''}`}>
+    <span className={`ct-av ${c.unread > 0 ? 'has-new' : ''}`}>
       {c.avatar ? <AvatarImg src={c.avatar} fallback={<span className="ct-ini">{ini}</span>} /> : <span className="ct-ini">{ini}</span>}
     </span>
   );

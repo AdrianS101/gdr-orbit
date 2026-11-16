@@ -210,7 +210,7 @@ function homeStats(brandId?: string) {
     return { day: key, views: sum(rows, ['views']) ?? 0, posts: rows.length };
   });
   const top = cur
-    .map((r) => ({ id: r.id, caption: (r.caption ?? '').slice(0, 90), thumb: r.thumb, permalink: r.permalink, network: r.network, account: r.username, views: JSON.parse(r.metrics).views ?? null }))
+    .map((r) => ({ id: r.id, caption: (r.caption ?? '').slice(0, 90), thumb: r.thumb ? `/api/media/${r.id}/thumb` : null, permalink: r.permalink, network: r.network, account: r.username, views: JSON.parse(r.metrics).views ?? null }))
     .filter((r) => r.views !== null)
     .sort((a, b) => b.views - a.views)
     .slice(0, 3);

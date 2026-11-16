@@ -7,6 +7,7 @@ import { uid } from '../../../shared/timeline.ts';
 import { commentTriggers, deliveryMessage, fill, linkMessage, describeOut, dmText, followUpReply, gateMessage, isButtonReply, nextAfterClick, openingMessage, pickCommentReply, privateReplyAllowed, usesButtonFlow, withinWindow, type AutomationConfig, type FlowStage, type OutMessage } from '../../../shared/automation.ts';
 import { graphVersion, MetaError } from './meta.ts';
 import { generateJson } from '../ai/providers.ts';
+import { contactAvatarFile } from './avatars.ts';
 import { brandContext } from '../ai/copy.ts';
 import { rowToBrand } from '../lib/mappers.ts';
 import { backgroundAllowed, isAppBlock, metaFetch, metaHealth } from './meta-guard.ts';
@@ -382,10 +383,21 @@ async function pollAccount(acc: any, fast = false) {
 async function enrichContacts(acc: any, token: string) {
   if (acc.network !== 'instagram') return;
   const week = new Date(Date.now() - 7 * 86400_000).toISOString();
-  const list = db.prepare("SELECT id, external_id FROM contacts WHERE account_id = ? AND (avatar IS NULL OR name IS NULL) AND external_id NOT LIKE 'user:%' AND (profile_checked_at IS NULL OR profile_checked_at < ?) ORDER BY last_message_at DESC LIMIT 3").all(acc.id, week) as any[];
+  const list = db.prepare("SELECT id, external_id, username FROM contacts WHERE account_id = ? AND (avatar IS NULL OR name IS NULL) AND (profile_checked_at IS NULL OR profile_checked_at < ?) ORDER BY last_message_at DESC LIMIT 3").all(acc.id, week) as any[];
   for (const c of list) {
-    const r = await call('GET', c.external_id, { fields: 'name,username,profile_pic' }, token).catch(() => null);
-    db.prepare('UPDATE contacts SET name = COALESCE(?, name), username = COALESCE(?, username), avatar = COALESCE(?, avatar), profile_checked_at = ? WHERE id = ?').run(r?.name ?? null, r?.username ?? null, r?.profile_pic ?? null, now(), c.id);
+    const r: any = c.external_id.startsWith('user:') ? null : await call('GET', c.external_id, { fields: 'name,username,profile_pic' }, token).catch(() => null);
+    let pic: string | null = r?.profile_pic ?? null;
+    let name: string | null = r?.name ?? null;
+    // Quem só comentou não tem foto na API de perfil; perfis profissionais têm foto pública (business_discovery).
+    const user = r?.username ?? c.username;
+    if (!pic && user && /^[a-z0-9._]{1,30}$/i.test(user)) {
+      const b: any = await call('GET', acc.external_id, { fields: `business_discovery.username(${user}){profile_picture_url,name}` }, token).catch(() => null);
+      pic = b?.business_discovery?.profile_picture_url ?? null;
+      name = name ?? b?.business_discovery?.name ?? null;
+    }
+    db.prepare('UPDATE contacts SET name = COALESCE(?, name), username = COALESCE(?, username), avatar = COALESCE(?, avatar), profile_checked_at = ? WHERE id = ?').run(name, r?.username ?? null, pic, now(), c.id);
+    // O link da Meta expira em poucos dias: guarda a cópia já.
+    if (pic) await contactAvatarFile(c.id).catch(() => null);
   }
 }
 

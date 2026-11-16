@@ -71,7 +71,11 @@ export async function contactAvatarFile(id: string): Promise<string | null> {
   const file = path.join(DIR, `ct_${c.id}.jpg`);
   if (fs.existsSync(file)) return file;
   const buf = await download(c.avatar);
-  if (!buf) return null;
+  if (!buf) {
+    // Link expirado antes de ser copiado: pede uma foto nova na próxima verificação da caixa de entrada.
+    if (c.avatar) db.prepare('UPDATE contacts SET avatar = NULL, profile_checked_at = NULL WHERE id = ?').run(c.id);
+    return null;
+  }
   save(file, buf);
   return file;
 }
@@ -79,3 +83,35 @@ export async function contactAvatarFile(id: string): Promise<string | null> {
 /** Endereços locais usados pela interface no lugar dos links da Meta. */
 export const accountAvatarUrl = (id: string, avatar: string | null | undefined) => (avatar ? `/api/social/accounts/${id}/avatar` : null);
 export const contactAvatarUrl = (id: string, avatar: string | null | undefined) => (avatar ? `/api/inbox/contacts/${id}/avatar` : null);
+
+// ---- Capas dos posts (Resultados, Início, automações) ----
+// Mesmo problema das fotos: o link salvo na sincronização expira. A capa é copiada uma vez e servida daqui;
+// se o link já expirou, pede um novo à API (thumbnail_url/media_url do Instagram, full_picture do Facebook).
+async function freshMediaUrl(m: any): Promise<string | null> {
+  const a = db.prepare('SELECT * FROM social_accounts WHERE id = ?').get(m.account_id) as any;
+  if (!a?.token || a.status === 'manual') return null;
+  try {
+    const G = `https://graph.facebook.com/${graphVersion()}`;
+    const fields = m.network === 'instagram' ? 'thumbnail_url,media_url' : 'full_picture';
+    const j: any = await (await metaFetch(`${G}/${m.external_id}?fields=${fields}&access_token=${unseal(a.token)}`)).json();
+    const url = m.network === 'instagram' ? j.thumbnail_url ?? j.media_url ?? null : j.full_picture ?? null;
+    if (url) db.prepare('UPDATE media_items SET thumb = ? WHERE id = ?').run(url, m.id);
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+export async function mediaThumbFile(id: string): Promise<string | null> {
+  const m = db.prepare('SELECT id, account_id, network, external_id, thumb FROM media_items WHERE id = ?').get(id) as any;
+  if (!m) return null;
+  const file = path.join(DIR, '..', 'thumbs', `${m.id}.jpg`);
+  if (fs.existsSync(file)) return file;
+  const buf = (await download(m.thumb)) ?? (await download(await freshMediaUrl(m)));
+  if (!buf) return null;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, buf);
+  return file;
+}
+
+export const mediaThumbUrl = (id: string, thumb: string | null | undefined) => (thumb ? `/api/media/${id}/thumb` : null);
