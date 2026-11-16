@@ -81,23 +81,31 @@ export function findClaudeCli(): string | null {
       if (dir && fs.existsSync(f)) return f;
     }
   }
-  // Instalação do app Claude para desktop (Windows)
-  const base = path.join(os.homedir(), 'AppData', 'Roaming', 'Claude', 'claude-code');
+  // Instalação do app Claude para desktop (Windows): versões antigas em Roaming\Claude\claude-code,
+  // as novas em Local\Claude-Data\<perfil>\claude-code\<versão>\<hash>\claude.exe.
+  const bases = [path.join(os.homedir(), 'AppData', 'Roaming', 'Claude', 'claude-code')];
   try {
-    const found: { f: string; t: number }[] = [];
-    for (const v of fs.readdirSync(base)) {
-      const vd = path.join(base, v);
-      for (const h of fs.readdirSync(vd)) {
-        const f = path.join(vd, h, exe);
-        if (fs.existsSync(f)) found.push({ f, t: fs.statSync(f).mtimeMs });
-      }
-    }
-    found.sort((a, b) => b.t - a.t);
-    if (found[0]) return found[0].f;
+    const cd = path.join(os.homedir(), 'AppData', 'Local', 'Claude-Data');
+    for (const p of fs.readdirSync(cd)) bases.push(path.join(cd, p, 'claude-code'));
   } catch {
-    /* sem instalação desktop */
+    /* sem a pasta nova */
   }
-  return null;
+  const found: { f: string; t: number }[] = [];
+  for (const base of bases) {
+    try {
+      for (const v of fs.readdirSync(base)) {
+        const vd = path.join(base, v);
+        for (const h of fs.readdirSync(vd)) {
+          const f = path.join(vd, h, exe);
+          if (fs.existsSync(f)) found.push({ f, t: fs.statSync(f).mtimeMs });
+        }
+      }
+    } catch {
+      /* sem instalação nesta pasta */
+    }
+  }
+  found.sort((a, b) => b.t - a.t);
+  return found[0]?.f ?? null;
 }
 
 function cleanEnv() {

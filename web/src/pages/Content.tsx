@@ -1,6 +1,6 @@
 // Conteúdo e calendário: posts por marca, fluxo de aprovação, agendamento, publicação e prévia por rede.
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus, List, CalendarDays, ExternalLink, Download, Copy, Sparkles, Film, Image as ImageIcon, Layers, Clapperboard, Check, X as XIcon, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, List, CalendarDays, ExternalLink, Download, Copy, Sparkles, Film, Image as ImageIcon, Layers, Clapperboard, Check, X as XIcon, Clock, UserPlus } from 'lucide-react';
 import { api } from '../lib/api.ts';
 import { useApp, showError, onJob } from '../lib/store.ts';
 import { Empty, Field, Modal } from '../components/ui.tsx';
@@ -44,6 +44,7 @@ interface Post {
   scheduledAt: string | null;
   timezone: string;
   cover: Cover;
+  collaborators?: string[];
   targets: Target[];
 }
 
@@ -78,6 +79,7 @@ function Composer({ brandId, post, onClose, onSaved }: { brandId: string; post: 
   const [suggestion, setSuggestion] = useState<string | null>(null);
   const [cover, setCover] = useState<Cover>(post?.cover ?? null);
   const [coverWaiting, setCoverWaiting] = useState<string | null>(null);
+  const [collabs, setCollabs] = useState((post?.collaborators ?? []).join(', '));
   useEffect(() => {
     if (coverWaiting && media.some((m) => m.id === coverWaiting)) {
       setCover({ kind: 'image', assetId: coverWaiting });
@@ -135,7 +137,7 @@ function Composer({ brandId, post, onClose, onSaved }: { brandId: string; post: 
   const previewAcc = selAccounts.find((a) => a.network === previewNet);
 
   const save = async (): Promise<Post | null> => {
-    const body = { brandId, type, media: chosen, caption, captions, cover: type === 'video' && !(cover?.kind === 'image' && !cover.assetId) ? cover : null, targets, scheduledAt: when ? new Date(when).toISOString() : null, timezone: TZ };
+    const body = { brandId, type, media: chosen, caption, captions, cover: type === 'video' && !(cover?.kind === 'image' && !cover.assetId) ? cover : null, collaborators: collabs, targets, scheduledAt: when ? new Date(when).toISOString() : null, timezone: TZ };
     try {
       const p = cur ? await api.put<Post>(`/api/posts/${cur.id}`, body) : await api.post<Post>('/api/posts', body);
       setCur(p);
@@ -222,6 +224,14 @@ function Composer({ brandId, post, onClose, onSaved }: { brandId: string; post: 
             )}
             <span className="faint small">{caption.length}/2200 caracteres</span>
           </Field>
+          {selAccounts.some((a) => a.network === 'instagram') && (
+            <Field label="Convidar perfil para colaborar (collab · opcional)" help="Usuário do Instagram, sem @, separado por vírgula (até 3). O post aparece nos dois perfis depois que a pessoa aceitar o convite no app do Instagram.">
+              <div className="row" style={{ gap: 8 }}>
+                <UserPlus size={16} className="faint" />
+                <input className="input" disabled={locked} value={collabs} onChange={(e) => setCollabs(e.target.value)} placeholder="usuario1, usuario2" />
+              </div>
+            </Field>
+          )}
           <Field label="Adaptar o texto por rede (opcional)">
             {(['instagram', 'facebook', 'tiktok'] as const).filter((n) => selAccounts.some((a) => a.network === n)).map((n) => (
               <details key={n}>
@@ -347,8 +357,13 @@ export function ContentPage() {
   const days = useMemo(() => {
     const start = new Date(month);
     start.setDate(1 - ((start.getDay() + 6) % 7));
-    return Array.from({ length: 42 }, (_, i) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
+    // Só as semanas que têm dias do mês (5 ou 6, às vezes 4); antes eram sempre 42 dias e sobrava semana inteira de outro mês.
+    const end = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+    const total = Math.ceil((Math.round((end.getTime() - start.getTime()) / 86400_000) + 1) / 7) * 7;
+    return Array.from({ length: total }, (_, i) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
   }, [month]);
+  const thisMonth = (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })();
+  const goMonth = (d: Date) => setMonth(new Date(d.getFullYear(), d.getMonth(), 1));
   const key = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
   const byDay = new Map<string, Post[]>();
   for (const p of filtered) if (p.scheduledAt) {
@@ -413,16 +428,22 @@ export function ContentPage() {
             <button className="btn ghost sm icon" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft size={16} /></button>
             <b style={{ minWidth: 150, textAlign: 'center' }}>{month.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</b>
             <button className="btn ghost sm icon" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><ChevronRight size={16} /></button>
+            {month.getTime() !== thisMonth.getTime() && <button className="btn ghost sm" onClick={() => goMonth(thisMonth)}>Mês atual</button>}
+            <span className="spacer" />
+            <span className="faint small">{filtered.filter((p) => p.scheduledAt && new Date(p.scheduledAt).getMonth() === month.getMonth() && new Date(p.scheduledAt).getFullYear() === month.getFullYear()).length} posts neste mês</span>
           </div>
           <div className="cal">
             {['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'].map((d) => <div key={d} className="cal-head">{d}</div>)}
             {days.map((d) => {
               const today = key(d) === key(new Date());
+              const out = d.getMonth() !== month.getMonth();
+              const past = !today && d.getTime() < new Date().setHours(0, 0, 0, 0);
+              const list = byDay.get(key(d)) ?? [];
               return (
-                <div key={d.toISOString()} className={`cal-day ${d.getMonth() !== month.getMonth() ? 'out' : ''} ${today ? 'today' : ''}`}>
+                <div key={d.toISOString()} className={`cal-day ${out ? 'out' : ''} ${past ? 'past' : ''} ${today ? 'today' : ''}`}>
                   <span className="cal-num">{d.getDate()}</span>
-                  {/* Todos os posts do dia aparecem (o dia cresce); antes só 3 e o resto ficava escondido. */}
-                  {(byDay.get(key(d)) ?? []).map(chip)}
+                  {/* Dias de outro mês não repetem os posts (só um resumo que leva até lá); no mês, todos os posts do dia aparecem. */}
+                  {out ? (list.length > 0 && <button className="cal-more" onClick={() => goMonth(d)}>{list.length} post{list.length > 1 ? 's' : ''}</button>) : list.map(chip)}
                 </div>
               );
             })}

@@ -70,7 +70,23 @@ export async function systemRoutes(app: FastifyInstance) {
       return { id: b.id, name: b.name, missing: missingFields(b.profile) };
     });
     const review = projects.filter((p) => p.status === 'review');
-    return { projects, failed, active, exports, brands, review, ai: verifiedProvider(), stats: homeStats(brandId) };
+    // Entregas do mês (posts do calendário com data neste mês): base do anel de progresso do Início.
+    const { month: mq } = req.query as { month?: string };
+    const m0 = /^\d{4}-\d{2}$/.test(mq ?? '') ? new Date(`${mq}-01T00:00:00`) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const m1 = new Date(m0.getFullYear(), m0.getMonth() + 1, 1);
+    const mp = db.prepare(`SELECT id, brand_id, type, caption, status, scheduled_at FROM posts WHERE scheduled_at >= ? AND scheduled_at < ? ${brandId ? 'AND brand_id = ?' : ''} ORDER BY scheduled_at`).all(m0.toISOString(), m1.toISOString(), ...args) as any[];
+    const cnt = (...s: string[]) => mp.filter((p) => s.includes(p.status)).length;
+    const month = {
+      key: `${m0.getFullYear()}-${String(m0.getMonth() + 1).padStart(2, '0')}`,
+      total: mp.length,
+      published: cnt('published'),
+      scheduled: cnt('scheduled', 'publishing'),
+      pending: cnt('draft', 'review', 'approved', 'awaiting_manual'),
+      failed: cnt('failed'),
+      late: mp.filter((p) => p.status !== 'published' && Date.parse(p.scheduled_at) < Date.now()).length,
+      upcoming: mp.filter((p) => Date.parse(p.scheduled_at) >= Date.now() && p.status !== 'published').slice(0, 6).map((p) => ({ id: p.id, brandId: p.brand_id, type: p.type, caption: p.caption, status: p.status, scheduledAt: p.scheduled_at })),
+    };
+    return { projects, failed, active, exports, brands, review, ai: verifiedProvider(), stats: homeStats(brandId), month };
   });
 
   // ---- fontes ----

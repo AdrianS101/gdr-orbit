@@ -136,8 +136,10 @@ async function waitContainer(id: string, token: string, onTick?: (msg: string) =
   throw new MetaError('O Instagram demorou demais para processar a mídia.', 'Tente publicar novamente em alguns minutos.');
 }
 
-export async function publishInstagram(a: { igId: string; pageId: string; token: string }, type: 'video' | 'image' | 'carousel', files: PublishFile[], caption: string, existingContainer: string | null, onStep: (msg: string, containerId?: string) => void, cover?: { offsetMs?: number; imageFile?: string } | null) {
+export async function publishInstagram(a: { igId: string; pageId: string; token: string }, type: 'video' | 'image' | 'carousel', files: PublishFile[], caption: string, existingContainer: string | null, onStep: (msg: string, containerId?: string) => void, cover?: { offsetMs?: number; imageFile?: string } | null, collaborators: string[] = []) {
   let container = existingContainer;
+  // Collab: o convite vai no container principal (Reels, imagem ou carrossel); o perfil convidado precisa aceitar no app.
+  const collab: Record<string, string> = collaborators.length ? { collaborators: JSON.stringify(collaborators) } : {};
   if (!container) {
     if (type === 'video') {
       onStep('Enviando vídeo ao Instagram');
@@ -146,11 +148,11 @@ export async function publishInstagram(a: { igId: string; pageId: string; token:
         onStep('Preparando a capa');
         coverParams.cover_url = await hostImage(a.pageId, a.token, cover.imageFile);
       } else if (cover?.offsetMs !== undefined) coverParams.thumb_offset = String(cover.offsetMs);
-      container = await resumableVideo(a.igId, a.token, files[0].file, { media_type: 'REELS', caption, share_to_feed: 'true', ...coverParams }, (m) => onStep(m));
+      container = await resumableVideo(a.igId, a.token, files[0].file, { media_type: 'REELS', caption, share_to_feed: 'true', ...coverParams, ...collab }, (m) => onStep(m));
     } else if (type === 'image') {
       onStep('Enviando imagem');
       const url = await hostImage(a.pageId, a.token, files[0].file);
-      container = (await call(`${G()}/${a.igId}/media`, { method: 'POST', body: new URLSearchParams({ image_url: url, caption, access_token: a.token }) })).id;
+      container = (await call(`${G()}/${a.igId}/media`, { method: 'POST', body: new URLSearchParams({ image_url: url, caption, ...collab, access_token: a.token }) })).id;
     } else {
       const children: string[] = [];
       for (const [i, f] of files.entries()) {
@@ -164,7 +166,7 @@ export async function publishInstagram(a: { igId: string; pageId: string; token:
           children.push((await call(`${G()}/${a.igId}/media`, { method: 'POST', body: new URLSearchParams({ image_url: url, is_carousel_item: 'true', access_token: a.token }) })).id);
         }
       }
-      container = (await call(`${G()}/${a.igId}/media`, { method: 'POST', body: new URLSearchParams({ media_type: 'CAROUSEL', children: children.join(','), caption, access_token: a.token }) })).id;
+      container = (await call(`${G()}/${a.igId}/media`, { method: 'POST', body: new URLSearchParams({ media_type: 'CAROUSEL', children: children.join(','), caption, ...collab, access_token: a.token }) })).id;
     }
     onStep('Mídia enviada', container!);
   }

@@ -29,7 +29,16 @@ function rowToPost(r: any) {
   const targets = (db.prepare('SELECT t.*, a.name AS account_name, a.username, a.avatar FROM post_targets t LEFT JOIN social_accounts a ON a.id = t.account_id WHERE t.post_id = ?').all(r.id) as any[]).map((t) => ({
     id: t.id, accountId: t.account_id, network: t.network, status: t.status, permalink: t.permalink, error: t.error, publishedAt: t.published_at, accountName: t.account_name, username: t.username, avatar: accountAvatarUrl(t.account_id, t.avatar),
   }));
-  return { id: r.id, brandId: r.brand_id, projectId: r.project_id, type: r.type, media: JSON.parse(r.media), caption: r.caption, captions: JSON.parse(r.captions), status: r.status, scheduledAt: r.scheduled_at, timezone: r.timezone, cover: r.cover ? JSON.parse(r.cover) : null, createdAt: r.created_at, updatedAt: r.updated_at, targets };
+  return { id: r.id, brandId: r.brand_id, projectId: r.project_id, type: r.type, media: JSON.parse(r.media), caption: r.caption, captions: JSON.parse(r.captions), status: r.status, scheduledAt: r.scheduled_at, timezone: r.timezone, cover: r.cover ? JSON.parse(r.cover) : null, collaborators: r.collaborators ? JSON.parse(r.collaborators) : [], createdAt: r.created_at, updatedAt: r.updated_at, targets };
+}
+
+/** Collab do Instagram: até 3 usuários (sem @), só letras, números, ponto e sublinhado. Carrossel e Reels/imagem aceitam. */
+function cleanCollabs(c: any): string | null {
+  const list = (Array.isArray(c) ? c : String(c ?? '').split(/[s,;]+/)).map((u: any) => String(u).trim().replace(/^@/, '').toLowerCase()).filter(Boolean);
+  const uniq = [...new Set(list)] as string[];
+  if (uniq.length > 3) throw badRequest('O Instagram aceita no máximo 3 colaboradores por post.', 'Deixe só os 3 perfis mais importantes.');
+  for (const u of uniq) if (!/^[a-z0-9._]{1,30}$/.test(u)) throw badRequest(`"${u}" não é um usuário válido do Instagram.`, 'Use só o nome de usuário, sem espaços (ex.: gdr.resultados).');
+  return uniq.length ? JSON.stringify(uniq) : null;
 }
 
 /** Capa do Reels: um quadro do vídeo (segundos) ou uma imagem da Biblioteca da marca. */
@@ -125,7 +134,7 @@ export async function publishHandler(ctx: JobContext) {
     db.prepare("UPDATE post_targets SET status = 'publishing', attempts = attempts + 1, error = NULL WHERE id = ?").run(t.id);
     try {
       const token = unseal(acc.token);
-      const r = acc.network === 'instagram' ? await publishInstagram({ igId: acc.external_id, pageId: acc.page_id, token }, post.type, files, caption, t.container_id, step, cover) : await publishFacebook({ pageId: acc.external_id, token }, post.type, files, caption, step, cover?.imageFile ?? cover?.frameFile);
+      const r = acc.network === 'instagram' ? await publishInstagram({ igId: acc.external_id, pageId: acc.page_id, token }, post.type, files, caption, t.container_id, step, cover, post.collaborators ? JSON.parse(post.collaborators) : []) : await publishFacebook({ pageId: acc.external_id, token }, post.type, files, caption, step, cover?.imageFile ?? cover?.frameFile);
       db.prepare("UPDATE post_targets SET status = 'published', external_id = ?, permalink = ?, published_at = ?, error = NULL WHERE id = ?").run(r.externalId, r.permalink, now(), t.id);
     } catch (e) {
       const msg = e instanceof MetaError ? `${e.message} ${e.hint}` : (e as Error).message;
@@ -323,8 +332,8 @@ export async function socialRoutes(app: FastifyInstance) {
     if (!db.prepare('SELECT 1 FROM brands WHERE id = ?').get(b.brandId)) throw badRequest('Escolha a marca.');
     validatePost({ type: b.type, media: b.media ?? [], targets: b.targets ?? [] }, b.brandId);
     const id = uid('po_');
-    db.prepare('INSERT INTO posts (id, brand_id, project_id, type, media, caption, captions, status, scheduled_at, timezone, cover, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
-      id, b.brandId, b.projectId ?? null, b.type, JSON.stringify(b.media), String(b.caption ?? '').slice(0, 5000), JSON.stringify(b.captions ?? {}), 'draft', b.scheduledAt ?? null, b.timezone ?? 'America/Sao_Paulo', cleanCover(b.cover, b.brandId, b.type), now(), now(),
+    db.prepare('INSERT INTO posts (id, brand_id, project_id, type, media, caption, captions, status, scheduled_at, timezone, cover, collaborators, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+      id, b.brandId, b.projectId ?? null, b.type, JSON.stringify(b.media), String(b.caption ?? '').slice(0, 5000), JSON.stringify(b.captions ?? {}), 'draft', b.scheduledAt ?? null, b.timezone ?? 'America/Sao_Paulo', cleanCover(b.cover, b.brandId, b.type), cleanCollabs(b.collaborators), now(), now(),
     );
     setTargets(id, b.targets ?? []);
     return rowToPost(db.prepare('SELECT * FROM posts WHERE id = ?').get(id));
@@ -339,9 +348,9 @@ export async function socialRoutes(app: FastifyInstance) {
     validatePost({ type: b.type, media: b.media ?? [], targets: b.targets ?? [] }, r.brand_id);
     // Só volta para revisão se o CONTEÚDO mudou (mídia, texto, capa, perfis). Mudar só a data não desfaz a aprovação.
     const oldTargets = (db.prepare('SELECT account_id FROM post_targets WHERE post_id = ?').all(id) as any[]).map((t) => t.account_id).sort().join(',');
-    const changed = r.type !== b.type || r.media !== JSON.stringify(b.media) || r.caption !== String(b.caption ?? '').slice(0, 5000) || r.captions !== JSON.stringify(b.captions ?? {}) || (r.cover ?? null) !== cleanCover(b.cover, r.brand_id, b.type) || oldTargets !== [...(b.targets ?? [])].sort().join(',');
-    db.prepare('UPDATE posts SET type = ?, media = ?, caption = ?, captions = ?, scheduled_at = ?, timezone = ?, cover = ?, status = ?, updated_at = ? WHERE id = ?').run(
-      b.type, JSON.stringify(b.media), String(b.caption ?? '').slice(0, 5000), JSON.stringify(b.captions ?? {}), b.scheduledAt ?? null, b.timezone ?? r.timezone, cleanCover(b.cover, r.brand_id, b.type), changed && (r.status === 'approved' || r.status === 'failed') ? 'review' : r.status, now(), id,
+    const changed = r.type !== b.type || r.media !== JSON.stringify(b.media) || r.caption !== String(b.caption ?? '').slice(0, 5000) || r.captions !== JSON.stringify(b.captions ?? {}) || (r.cover ?? null) !== cleanCover(b.cover, r.brand_id, b.type) || (r.collaborators ?? null) !== cleanCollabs(b.collaborators) || oldTargets !== [...(b.targets ?? [])].sort().join(',');
+    db.prepare('UPDATE posts SET type = ?, media = ?, caption = ?, captions = ?, scheduled_at = ?, timezone = ?, cover = ?, collaborators = ?, status = ?, updated_at = ? WHERE id = ?').run(
+      b.type, JSON.stringify(b.media), String(b.caption ?? '').slice(0, 5000), JSON.stringify(b.captions ?? {}), b.scheduledAt ?? null, b.timezone ?? r.timezone, cleanCover(b.cover, r.brand_id, b.type), cleanCollabs(b.collaborators), changed && (r.status === 'approved' || r.status === 'failed') ? 'review' : r.status, now(), id,
     );
     setTargets(id, b.targets ?? []);
     return rowToPost(db.prepare('SELECT * FROM posts WHERE id = ?').get(id));

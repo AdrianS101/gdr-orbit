@@ -153,6 +153,14 @@ const migrations: string[] = [
   `,
   `ALTER TABLE contacts ADD COLUMN profile_checked_at TEXT;`,
   `ALTER TABLE projects ADD COLUMN clip_meta TEXT;`,
+  // Collab do Instagram: até 3 usuários convidados como colaboradores do post.
+  `ALTER TABLE posts ADD COLUMN collaborators TEXT;`,
+  // Relatórios de resultados gerados pela IA no modelo padrão GDR.
+  `CREATE TABLE IF NOT EXISTS reports (
+    id TEXT PRIMARY KEY, brand_id TEXT NOT NULL, since TEXT NOT NULL, until TEXT NOT NULL,
+    title TEXT NOT NULL, html TEXT NOT NULL, model TEXT, created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS reports_brand ON reports(brand_id, created_at);`,
 ];
 
 db.exec('CREATE TABLE IF NOT EXISTS _migrations (n INTEGER PRIMARY KEY)');

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Home, Building2, Clapperboard, FolderOpen, CalendarDays, Inbox, Workflow, BarChart3, Settings, ChevronDown, Check, Activity, X, RotateCcw, LogOut, Layers, Trash2 } from 'lucide-react';
+import { Home, Building2, Clapperboard, FolderOpen, CalendarDays, Inbox, Workflow, BarChart3, Settings, ChevronDown, Check, Activity, X, RotateCcw, LogOut, Layers, Trash2, Plus, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useApp, showError } from '../lib/store.ts';
 import { api } from '../lib/api.ts';
 import { Progress, OrbitLogo } from './ui.tsx';
@@ -73,7 +73,7 @@ export function BrandSwitcher() {
   );
 }
 
-const JOB_LABEL: Record<string, string> = { ingest: 'Preparação', transcribe: 'Transcrição', render: 'Exportação', publish: 'Publicação', drive: 'Drive', metrics: 'Métricas', clips: 'Cortes com IA' };
+const JOB_LABEL: Record<string, string> = { ingest: 'Preparação', transcribe: 'Transcrição', render: 'Exportação', publish: 'Publicação', drive: 'Drive', metrics: 'Métricas', clips: 'Cortes com IA', report: 'Relatório' };
 
 /** Para onde leva o clique num processamento: o projeto (exportação) ou o vídeo na Biblioteca/cortes. */
 function jobLink(j: Job): string | null {
@@ -81,7 +81,7 @@ function jobLink(j: Job): string | null {
   if ((j.type === 'transcribe' || j.type === 'clips') && j.assetId) return `/cortes/${j.assetId}`;
   if (j.assetId || j.type === 'ingest' || j.type === 'drive') return '/biblioteca';
   if (j.type === 'publish') return '/conteudo';
-  if (j.type === 'metrics') return '/resultados';
+  if (j.type === 'metrics' || j.type === 'report') return '/resultados';
   return null;
 }
 
@@ -176,35 +176,62 @@ export function Shell({ children }: { children: ReactNode }) {
     await api.post('/api/auth/logout').catch(() => {});
     location.href = '/';
   };
+  const { brands, scope, setScope } = useApp();
+  // Barra lateral recolhível (só ícones, com o nome ao passar o mouse); a escolha fica salva neste navegador.
+  const [mini, setMini] = useState(() => { try { return localStorage.getItem('gdr.sidebar') === 'mini'; } catch { return false; } });
+  const toggle = () => setMini((m) => { try { localStorage.setItem('gdr.sidebar', m ? 'full' : 'mini'); } catch { /* sem armazenamento */ } return !m; });
+  const [q, setQ] = useState('');
+  const list = brands.filter((b) => !q || b.name.toLowerCase().includes(q.toLowerCase()));
   return (
-    <div className="shell">
+    <div className={`shell ${mini ? 'mini' : ''}`}>
       <aside className="sidebar">
         <div className="brandmark">
           <div className="logo">
             <OrbitLogo />
           </div>
-          <div>
+          <div className="brandmark-text">
             <b>GDR Digital</b>
             <small>GDR Gestão de Resultados</small>
           </div>
+          <button className="side-toggle" onClick={toggle} title={mini ? 'Expandir menu' : 'Recolher menu'} aria-label={mini ? 'Expandir menu' : 'Recolher menu'}>
+            {mini ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          </button>
         </div>
         {NAV.map((n, i) =>
           'sep' in n ? (
             <div key={i} className="nav-sep" />
           ) : (
-            <NavLink key={n.to} to={n.to} end={'end' in n} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <NavLink key={n.to} to={n.to} end={'end' in n} data-tip={n.label} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
               <n.icon size={18} />
               <span>{n.label}</span>
-              {'soon' in n && <span className="soon">{String((n as { soon?: string }).soon)}</span>}
             </NavLink>
           ),
         )}
+        <div className="nav-sep" />
+        <div className="side-label">
+          <span>Clientes</span>
+          <b>{brands.length}</b>
+          <NavLink to="/marcas?nova=1" className="side-add" title="Nova marca" aria-label="Nova marca"><Plus size={14} /></NavLink>
+        </div>
+        {brands.length > 6 && !mini && <input className="input sm side-search" placeholder="Buscar cliente…" value={q} onChange={(e) => setQ(e.target.value)} />}
+        <div className="side-brands">
+          <button className={`side-brand ${scope === 'all' ? 'on' : ''}`} data-tip="Visão geral" onClick={() => setScope('all')}>
+            <BrandAvatar b={null} size={24} />
+            <span className="ellipsis">Visão geral</span>
+          </button>
+          {list.map((b) => (
+            <button key={b.id} className={`side-brand ${scope === b.id ? 'on' : ''}`} data-tip={b.name} onClick={() => setScope(b.id)}>
+              <BrandAvatar b={b} size={24} />
+              <span className="ellipsis">{b.name}</span>
+            </button>
+          ))}
+        </div>
         <div className="grow" />
-        <NavLink to="/configuracoes" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+        <NavLink to="/configuracoes" data-tip="Configurações" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
           <Settings size={18} />
           <span>Configurações</span>
         </NavLink>
-        <button className="nav-item" style={{ background: 'none', border: 0, cursor: 'pointer' }} onClick={logout}>
+        <button className="nav-item" data-tip="Sair" style={{ background: 'none', border: 0, cursor: 'pointer' }} onClick={logout}>
           <LogOut size={18} />
           <span>Sair</span>
         </button>

@@ -1,12 +1,13 @@
 // Resultados: métricas reais do Instagram/Facebook por período, ranking de conteúdos e tráfego pago.
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, ExternalLink, Download, BarChart3, FileText, TrendingUp, TrendingDown, Megaphone, Upload } from 'lucide-react';
+import { RefreshCw, ExternalLink, Download, BarChart3, TrendingUp, TrendingDown, Megaphone, Upload } from 'lucide-react';
 import { api } from '../lib/api.ts';
 import { useApp, showError, onJob } from '../lib/store.ts';
 import { Empty, Field, Spinner } from '../components/ui.tsx';
 import { fmtDateTime, fmtRelative } from '../lib/format.ts';
 import { ProfileAnalysis, AskData, Competitors, Ideas } from './Intelligence.tsx';
+import { ReportsPanel } from './Reports.tsx';
 import { MetricsImportModal, type ImportBatch } from './MetricsImport.tsx';
 import { AreaChart } from '../components/AreaChart.tsx';
 
@@ -131,7 +132,7 @@ export function ResultsPage() {
       </div>
 
       <div className="tabs" role="tablist">
-        {[['painel', 'Painel'], ['perfil', 'Análise do perfil'], ['perguntas', 'Pergunte aos dados'], ['concorrentes', 'Concorrentes e tendências'], ['pautas', 'Pautas']].map(([k, l]) => (
+        {[['painel', 'Painel'], ['relatorio', 'Relatório GDR'], ['perfil', 'Análise do perfil'], ['perguntas', 'Pergunte aos dados'], ['concorrentes', 'Concorrentes e tendências'], ['pautas', 'Pautas']].map(([k, l]) => (
           <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
@@ -292,11 +293,8 @@ export function ResultsPage() {
         </section>
       )}
 
-      <section className="card col" style={{ gap: 6 }}>
-        <h2 className="row" style={{ margin: 0 }}><FileText size={16} /> Relatório padrão GDR</h2>
-        <span className="muted small">Aguardando o modelo de relatório que você vai desenvolver. Quando o padrão estiver definido, os dados desta tela serão montados nele automaticamente para enviar ao cliente.</span>
-      </section>
       </>)}
+      {tab === 'relatorio' && <ReportsPanel brandId={brandId} since={since} until={until} />}
       {importing && brandId && <MetricsImportModal brandId={brandId} imports={data?.imports ?? []} onClose={() => setImporting(false)} onDone={load} />}
     </>
   );

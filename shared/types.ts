@@ -289,7 +289,7 @@ export interface Asset {
 }
 
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'canceled';
-export type JobType = 'ingest' | 'transcribe' | 'render' | 'publish' | 'drive' | 'metrics' | 'clips';
+export type JobType = 'ingest' | 'transcribe' | 'render' | 'publish' | 'drive' | 'metrics' | 'clips' | 'report';
 
 export interface Job {
   id: string;
